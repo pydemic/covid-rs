@@ -1,0 +1,35 @@
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[package]
+name = "covid"
+version = "0.1.0"
+authors = ["Fábio Macêdo Mendes <fabiomacedomendes@gmail.com>"]
+edition = "2018"
+doc = true
+doctest = true
+
+[lib]
+crate-name = "covid"
+# crate-type = ["rlib"]
+
+[[bin]]
+name = "sir"
+path = "bin/sir.rs"
+
+
+[[bin]]
+name = "sim"
+path = "bin/sim.rs"
+
+[dependencies]
+csv = "1.1"
+toml = "0.5"
+log = { version = "0.4.14", features = ["release_max_level_warn"] }
+simple_logger = "1.11.0"
+serde = { version = "1.0", features = ["derive"] }
+getset = { version = "0.1.1" }
+rand = { version = "^0.8.3", features = ["small_rng"] }
+ndarray = { version = "0.15.1" }
+rayon = "1.5"
+assert_approx_eq = "1.1.0"
+paste = "1.0.5"
