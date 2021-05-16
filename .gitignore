@@ -1,3 +1,8 @@
 .hypothesis/
 .vscode
 target/
+.mypy_cache
+__pycache__
+add analysis/data
+add analysis/data.zip
+add analysis/covid

@@ -38,8 +38,8 @@ pub trait Update<W: World>: State {
 /// A trait for objects that can be stochastically updated in the given
 /// World. Users must pass a random number generator in order to update
 // this objectobject
-pub trait StochasticUpdate<W: World, R: Rng>: State {
-    fn update_random(&mut self, world: &W, rng: &mut R);
+pub trait StochasticUpdate<W: World>: State {
+    fn update_random<R: Rng>(&mut self, world: &W, rng: &mut R);
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -52,13 +52,13 @@ impl<W: World> Update<W> for () {
     fn update(&mut self, _world: &W) {}
 }
 
-impl<W: World, R: Rng> StochasticUpdate<W, R> for () {
-    fn update_random(&mut self, _world: &W, _: &mut R) {}
+impl<W: World> StochasticUpdate<W> for () {
+    fn update_random<R: Rng>(&mut self, _world: &W, _: &mut R) {}
 }
 
 // Epidemic models //////////////////////////////////////////////////////////
-impl<R: Rng> StochasticUpdate<Params, R> for SimpleSIR {
-    fn update_random(&mut self, params: &Params, rng: &mut R) {
+impl StochasticUpdate<Params> for SimpleSIR {
+    fn update_random<R: Rng>(&mut self, params: &Params, rng: &mut R) {
         match self {
             Self::Infectious => {
                 if rng.gen_bool(params.infectious_transition_prob()) {
@@ -70,8 +70,8 @@ impl<R: Rng> StochasticUpdate<Params, R> for SimpleSIR {
     }
 }
 
-impl<R: Rng> StochasticUpdate<Params, R> for SimpleSEIR {
-    fn update_random(&mut self, params: &Params, rng: &mut R) {
+impl StochasticUpdate<Params> for SimpleSEIR {
+    fn update_random<R: Rng>(&mut self, params: &Params, rng: &mut R) {
         match self {
             Self::Exposed => {
                 if rng.gen_bool(params.incubation_transition_prob()) {
@@ -88,8 +88,8 @@ impl<R: Rng> StochasticUpdate<Params, R> for SimpleSEIR {
     }
 }
 
-impl<R: Rng> StochasticUpdate<Params, R> for SimpleSEAIR {
-    fn update_random(&mut self, params: &Params, rng: &mut R) {
+impl StochasticUpdate<Params> for SimpleSEAIR {
+    fn update_random<R: Rng>(&mut self, params: &Params, rng: &mut R) {
         match self {
             Self::Exposed => {
                 if rng.gen_bool(params.incubation_transition_prob()) {
@@ -115,8 +115,8 @@ impl<R: Rng> StochasticUpdate<Params, R> for SimpleSEAIR {
     }
 }
 
-impl<R: Rng> StochasticUpdate<Params, R> for SimpleSEICHAR {
-    fn update_random(&mut self, params: &Params, rng: &mut R) {
+impl StochasticUpdate<Params> for SimpleSEICHAR {
+    fn update_random<R: Rng>(&mut self, params: &Params, rng: &mut R) {
         let age = 40; // TODO
         match self {
             Self::Exposed => {
@@ -165,13 +165,12 @@ impl<R: Rng> StochasticUpdate<Params, R> for SimpleSEICHAR {
     }
 }
 
-impl<R, T> StochasticUpdate<Params, R> for T
+impl<T> StochasticUpdate<Params> for T
 where
-    R: Rng,
     T: HasCompartiment,
-    T::CompartmentModel: StochasticUpdate<Params, R>,
+    T::CompartmentModel: StochasticUpdate<Params>,
 {
-    fn update_random(&mut self, params: &Params, rng: &mut R) {
+    fn update_random<R: Rng>(&mut self, params: &Params, rng: &mut R) {
         let mut value = self.compartment();
         value.update_random(params, rng);
         self.set_compartment(value);

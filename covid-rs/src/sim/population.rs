@@ -134,7 +134,7 @@ pub trait Population {
     where
         R: Rng,
         W: World,
-        <Self as Population>::State: StochasticUpdate<W, R>,
+        <Self as Population>::State: StochasticUpdate<W>,
     {
         self.each_agent_mut(&mut |_, st: &mut Self::State| st.update_random(world, rng));
     }

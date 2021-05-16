@@ -175,7 +175,7 @@ where
 
     fn run<ST: Stats>(&mut self, epicurve: &[usize], stats: &mut ST)
     where
-        P::State: StochasticUpdate<Params, SmallRng>,
+        P::State: StochasticUpdate<Params>,
     {
         if epicurve.len() == 0 {
             return;

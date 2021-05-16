@@ -55,7 +55,7 @@ macro_rules! py_immutable_props {
 #[derive(Debug)]
 pub struct Agent {
     data: rs::Ag,
-} 
+}
 
 impl Agent {
     fn new_from_data(agent: &rs::Ag) -> Self {

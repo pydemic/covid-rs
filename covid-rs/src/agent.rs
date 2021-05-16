@@ -245,8 +245,8 @@ impl HasAge for Ag {
     }
 }
 
-impl<R: Rng> StochasticUpdate<Params, R> for Ag {
-    fn update_random(&mut self, params: &Params, rng: &mut R) {
+impl StochasticUpdate<Params> for Ag {
+    fn update_random<R: Rng>(&mut self, params: &Params, rng: &mut R) {
         self.update(rng, params, params)
     }
 }
