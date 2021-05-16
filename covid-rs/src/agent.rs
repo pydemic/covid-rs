@@ -191,7 +191,7 @@ impl Ag {
 
 impl State for Ag {}
 
-impl Enumerable for Ag {
+impl EpiModel for Ag {
     const CARDINALITY: usize = VariantSEICHAR::CARDINALITY;
 
     fn index(&self) -> usize {
@@ -199,7 +199,7 @@ impl Enumerable for Ag {
     }
 }
 
-impl SIR for Ag {
+impl SIRLike for Ag {
     const S: usize = VariantSEICHAR::S;
     const I: usize = VariantSEICHAR::I;
     const R: usize = VariantSEICHAR::R;
@@ -222,15 +222,15 @@ impl SIR for Ag {
     }
 }
 
-impl SEIR for Ag {
+impl SEIRLike for Ag {
     const E: usize = VariantSEICHAR::E;
 }
 
-impl SEAIR for Ag {
+impl SEAIRLike for Ag {
     const A: usize = VariantSEICHAR::A;
 }
 
-impl SEICHAR for Ag {
+impl SEICHARLike for Ag {
     const C: usize = VariantSEICHAR::C;
     const H: usize = VariantSEICHAR::H;
 }

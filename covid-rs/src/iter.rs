@@ -1,4 +1,4 @@
-use crate::{agent::Ag, prelude::{Age, Real, SIR}};
+use crate::{agent::Ag, prelude::{Age, Real, SIRLike}};
 use std::iter::{Filter, Iterator, Map};
 
 pub trait AgentsIter<'a>

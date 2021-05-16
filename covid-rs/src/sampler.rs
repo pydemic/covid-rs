@@ -1,5 +1,5 @@
 use crate::{
-    prelude::{Real, SIR},
+    prelude::{EpiModel, Real},
     sim::{HasAge, Population},
 };
 use getset::*;
@@ -34,6 +34,13 @@ where
     fn set_prob_infection(&mut self, value: Real) -> &mut Self;
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// CONCRETE IMPLEMENTATIONS
+////////////////////////////////////////////////////////////////////////////////
+
+/// A NoOP sampler. This is actually just a type alias to unit.
+type NoOpSampler = ();
+
 impl<P: Population> Sampler<P> for () {
     fn prob_infection(&self) -> Real {
         0.0
@@ -47,8 +54,6 @@ impl<P: Population> Sampler<P> for () {
         vec![]
     }
 }
-
-/** SIMPLE SAMPLER ************************************************************/
 
 /// A simple sampling strategy that picks up a fixed number of contacts per
 /// infectious individual and infect randomly in population using the given
@@ -72,7 +77,7 @@ impl SimpleSampler {
 impl<P> Sampler<P> for SimpleSampler
 where
     P: Population,
-    P::State: SIR,
+    P::State: EpiModel,
 {
     fn prob_infection(&self) -> Real {
         self.prob_infection
@@ -86,7 +91,7 @@ where
         let n = pop.count();
 
         pop.each_agent(&mut |i, st| {
-            if st.is_infecting() {
+            if st.is_contagious() {
                 let mut m = round_probabilistically(self.n_contacts, rng);
                 while m > 0 {
                     if rng.gen_bool(self.prob_infection) {
@@ -107,8 +112,6 @@ where
     }
 }
 
-/** CONTACT MATRIX SAMPLER ****************************************************/
-
 /// A simple sampling strategy that picks up a fixed number of contacts per
 /// infectious individual and infect randomly in population using the given
 /// probability of infection.
@@ -116,6 +119,7 @@ where
 pub struct ContactMatrixSampler {
     bin_size: u8,
     bin_map: Vec<Vec<usize>>,
+    
     #[getset(get = "pub", set = "pub")]
     contact_matrix: Array2<Real>,
     prob_infection: Real,
@@ -147,7 +151,7 @@ impl ContactMatrixSampler {
 impl<P> Sampler<P> for ContactMatrixSampler
 where
     P: Population,
-    P::State: HasAge + SIR,
+    P::State: HasAge + EpiModel,
 {
     fn init(&mut self, pop: &mut P) {
         let nbins = self.nbins();
@@ -175,7 +179,7 @@ where
     fn sample_infection_pairs(&self, pop: &P, rng: &mut impl Rng) -> Vec<(usize, usize)> {
         let mut pairs = Vec::new();
         pop.each_agent(&mut |i, st| {
-            if st.is_infecting() {
+            if st.is_contagious() {
                 let u = self.bin_for_age(st.age());
                 for v in 0..self.nbins() {
                     let mut m = round_probabilistically(self.contact_matrix[(u, v)], rng);
@@ -205,7 +209,7 @@ fn round_probabilistically(f: Real, rng: &mut impl Rng) -> usize {
     return int;
 }
 
-/** OPTIONS SAMPLER ****************************************************/
+/// TODO: impl PythonSampler and use dyn to make this go away!
 #[derive(Debug, Clone, PartialEq)]
 pub enum AnySampler {
     Simple(SimpleSampler),
@@ -215,7 +219,7 @@ pub enum AnySampler {
 impl<P> Sampler<P> for AnySampler
 where
     P: Population,
-    P::State: HasAge + SIR,
+    P::State: HasAge + EpiModel,
 {
     fn sample_infection_pairs(&self, pool: &P, rng: &mut impl Rng) -> Vec<(usize, usize)> {
         match self {

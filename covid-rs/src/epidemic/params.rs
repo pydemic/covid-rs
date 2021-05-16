@@ -1,4 +1,7 @@
-use crate::{prelude::*, sim::World};
+use crate::{
+    prelude::{Age, AgeDistribution10, AgeParam, ForAge, Real},
+    sim::World,
+};
 use getset::*;
 use paste::paste;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -12,26 +15,6 @@ const INCUBATION_PERIOD: Real = 3.69;
 const INFECTIOUS_PERIOD: Real = 3.47;
 const SEVERE_PERIOD: Real = 7.19;
 const CRITICAL_PERIOD: Real = 17.50 - 7.19;
-
-#[derive(Debug, PartialEq, Copy, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum Param {
-    Distrib(AgeDistrib10),
-    Scalar(Real),
-}
-impl Param {
-    fn for_age(&self, age: Age) -> Real {
-        match self {
-            &Param::Scalar(v) => v,
-            &Param::Distrib(ages) => ages[(age / 10).max(8) as usize],
-        }
-    }
-}
-impl Default for Param {
-    fn default() -> Self {
-        Param::Scalar(0.)
-    }
-}
 
 #[derive(CopyGetters, Getters, Setters, Debug, PartialEq, Copy, Clone, Serialize)]
 #[serde(default)]
@@ -72,16 +55,16 @@ pub struct Params {
     critical_transition_prob: Real,
 
     /// Probability that an exposed person becomes asymptomatic
-    prob_asymptomatic: Param,
+    prob_asymptomatic: AgeParam,
 
     /// Probability that an infections agent evolves to severe
-    prob_severe: Param,
+    prob_severe: AgeParam,
 
     /// Probability that a severe patient aggravates to critical
-    prob_critical: Param,
+    prob_critical: AgeParam,
 
     /// Probability that a critical patient dies
-    prob_death: Param,
+    prob_death: AgeParam,
 }
 
 impl World for Params {}
@@ -93,10 +76,10 @@ macro_rules! value_prop {
                 self.$x.for_age(age)
             }
             pub fn [<set_ $x>](&mut self, value: Real) {
-                self.$x = Param::Scalar(value);
+                self.$x = AgeParam::Scalar(value);
             }
-            pub fn [<set_ $x _distrib>](&mut self, value: AgeDistrib10) {
-                self.$x = Param::Distrib(value);
+            pub fn [<set_ $x _distrib>](&mut self, value: AgeDistribution10) {
+                self.$x = AgeParam::Distribution(value);
             }
         }
     };
@@ -142,6 +125,16 @@ impl Params {
         self.set_infectious_period(self.infectious_period + self.incubation_period);
         return self.set_incubation_period(0.0);
     }
+
+    /// Probability of death for cases
+    pub fn case_fatality_ratio(&self, age: Age) -> Real {
+        self.prob_death(age) * self.prob_critical(age) * self.prob_severe(age)
+    }
+
+    /// Probability of death for all infections (symptomatic or not)
+    pub fn infection_fatality_ratio(&self, age: Age) -> Real {
+        self.case_fatality_ratio(age) * self.prob_asymptomatic(age)
+    }
 }
 
 impl Default for Params {
@@ -156,10 +149,10 @@ impl Default for Params {
             severe_transition_prob: 0.0,
             critical_transition_prob: 0.0,
             infectiousness: 1.0,
-            prob_asymptomatic: Param::Scalar(PROB_ASYMPTOMATIC),
-            prob_severe: Param::Scalar(PROB_SEVERE),
-            prob_critical: Param::Scalar(PROB_CRITICAL),
-            prob_death: Param::Scalar(PROB_DEATH),
+            prob_asymptomatic: AgeParam::Scalar(PROB_ASYMPTOMATIC),
+            prob_severe: AgeParam::Scalar(PROB_SEVERE),
+            prob_critical: AgeParam::Scalar(PROB_CRITICAL),
+            prob_death: AgeParam::Scalar(PROB_DEATH),
         };
 
         new.set_incubation_period(INCUBATION_PERIOD);
@@ -178,10 +171,10 @@ struct _Params {
     severe_period: Real,
     infectiousness: Real,
     critical_period: Real,
-    prob_asymptomatic: Param,
-    prob_severe: Param,
-    prob_critical: Param,
-    prob_death: Param,
+    prob_asymptomatic: AgeParam,
+    prob_severe: AgeParam,
+    prob_critical: AgeParam,
+    prob_death: AgeParam,
 }
 
 impl Default for _Params {
@@ -192,10 +185,10 @@ impl Default for _Params {
             severe_period: SEVERE_PERIOD,
             infectiousness: 1.0,
             critical_period: CRITICAL_PERIOD,
-            prob_asymptomatic: Param::Scalar(PROB_ASYMPTOMATIC),
-            prob_severe: Param::Scalar(PROB_SEVERE),
-            prob_critical: Param::Scalar(PROB_CRITICAL),
-            prob_death: Param::Scalar(PROB_DEATH),
+            prob_asymptomatic: AgeParam::Scalar(PROB_ASYMPTOMATIC),
+            prob_severe: AgeParam::Scalar(PROB_SEVERE),
+            prob_critical: AgeParam::Scalar(PROB_CRITICAL),
+            prob_death: AgeParam::Scalar(PROB_DEATH),
         }
     }
 }

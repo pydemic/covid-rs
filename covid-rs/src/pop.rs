@@ -1,7 +1,7 @@
 use crate::{
     agent::Infect,
-    epidemic::{Params, Variant, SEICHAR},
-    prelude::{Ag, Real, Sampler, SEAIR, SEIR, SIR},
+    epidemic::{Params, Variant, SEICHARLike},
+    prelude::{Ag, Real, Sampler, SEAIRLike, SEIRLike, SIRLike},
     sim::{Agent, Id, Population},
 };
 use rand::{

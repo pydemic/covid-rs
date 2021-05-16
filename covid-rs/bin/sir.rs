@@ -34,7 +34,7 @@ where
     W: World,
     P: Population,
     S: Sampler<P>,
-    P::State: StochasticUpdate<W> + SIR,
+    P::State: StochasticUpdate<W> + SIRLike,
 {
     pub fn new(world: W, population: P, sampler: S) -> Self {
         let reporter = EpicurveReporter::new(&population);
@@ -72,7 +72,7 @@ impl<W, P, const N: usize> Simulation<W, P, SimpleSampler, { N }>
 where
     W: World,
     P: Population,
-    P::State: StochasticUpdate<W> + SIR,
+    P::State: StochasticUpdate<W> + SIRLike,
 {
     pub fn new_simple(world: W, population: P, n_contacts: Real, prob_infection: Real) -> Self {
         let sampler = SimpleSampler::new(n_contacts, prob_infection);
@@ -106,7 +106,7 @@ type SEAIR_b = DiseaseState<EAI, bool>;
 type SEAIR_u = DiseaseState<EAI, usize>;
 
 pub fn main() {
-    type T = SimpleSEIR;
+    type T = SEIR;
     use simple_logger::SimpleLogger;
     SimpleLogger::new().init().unwrap();
 

@@ -1,5 +1,5 @@
 use super::{Agent, Id, State, StochasticUpdate, Update, World};
-use crate::prelude::{Enumerable, Sampler, SEAIR, SEICHAR, SEIR, SIR};
+use crate::prelude::{EpiModel, Sampler, SEAIRLike, SEICHARLike, SEIRLike, SIRLike};
 use paste::paste;
 use rand::prelude::{Rng, SliceRandom};
 use std::collections::HashSet;
@@ -144,7 +144,7 @@ pub trait Population {
         R: Rng,
         S: Sampler<Self>,
         Self: Sized,
-        Self::State: SIR,
+        Self::State: SIRLike,
     {
         self.update_sampler_with(sampler, rng, |src, dest| dest.contaminated_from(src))
     }
@@ -159,7 +159,7 @@ pub trait Population {
         R: Rng,
         S: Sampler<Self>,
         Self: Sized,
-        Self::State: SIR,
+        Self::State: SIRLike,
     {
         let mut cases = 0;
         let mut g = f;
@@ -191,7 +191,7 @@ pub trait Population {
         f: impl Fn(usize, &mut Self::State) -> bool,
     ) -> usize
     where
-        Self::State: SIR,
+        Self::State: SIRLike,
     {
         let from_list = |n, rng, pop: &mut Self| {
             let mut susceptibles = vec![];
@@ -233,19 +233,19 @@ pub trait Population {
     }
 
     // Methods for SIR-based populations //////////////////////////////////////
-    compartment_methods!(susceptible, for=SIR);
-    compartment_methods!(infectious, for=SIR);
-    compartment_methods!(recovered, for=SIR);
-    compartment_methods!(dead, for=SIR);
-    compartment_methods!(infecting, for=SIR);
-    compartment_methods!(exposed, for=SEIR);
-    compartment_methods!(asymptomatic, for=SEAIR);
-    compartment_methods!(severe, for=SEICHAR);
-    compartment_methods!(critical, for=SEICHAR);
+    compartment_methods!(susceptible, for=EpiModel);
+    compartment_methods!(contagious, for=SIRLike);
+    compartment_methods!(dead, for=EpiModel);
+    compartment_methods!(infectious, for=SIRLike);
+    compartment_methods!(recovered, for=SIRLike);
+    compartment_methods!(exposed, for=SEIRLike);
+    compartment_methods!(asymptomatic, for=SEAIRLike);
+    compartment_methods!(severe, for=SEICHARLike);
+    compartment_methods!(critical, for=SEICHARLike);
 
     fn count_sir(&self) -> (usize, usize, usize, usize)
     where
-        Self::State: SIR + Enumerable,
+        Self::State: SIRLike + EpiModel,
     {
         let (mut s, mut i, mut r, mut n) = (0, 0, 0, 0);
         self.each_agent(&mut |_, st: &Self::State| {
@@ -263,7 +263,7 @@ pub trait Population {
 
     fn count_seir(&self) -> (usize, usize, usize, usize, usize)
     where
-        Self::State: SEIR,
+        Self::State: SEIRLike,
     {
         let (mut s, mut e, mut i, mut r, mut n) = (0, 0, 0, 0, 0);
         self.each_agent(&mut |_, st: &Self::State| {
@@ -283,7 +283,7 @@ pub trait Population {
 
     fn count_seair(&self) -> (usize, usize, usize, usize, usize, usize)
     where
-        Self::State: SEAIR,
+        Self::State: SEAIRLike,
     {
         let (mut s, mut e, mut a, mut i, mut r, mut n) = (0, 0, 0, 0, 0, 0);
         self.each_agent(&mut |_, st: &Self::State| {
@@ -578,5 +578,3 @@ impl<S: State> Population for Vec<Agent<S>> {
         return out;
     }
 }
-
-// 61 99603 5955

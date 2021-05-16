@@ -1,5 +1,5 @@
 use super::{EpicurveTracker, GrowableReporter, Population, Reporter, ReporterList, World};
-use crate::prelude::{Enumerable, SIR};
+use crate::prelude::{EpiModel, SIRLike};
 use std::fmt::Debug;
 
 /// Epicurve reporter that can be extended with an arbitrary list of FnMut()
@@ -14,7 +14,7 @@ impl<W, P, const N: usize> EpicurveReporter<W, P, { N }> {
     pub fn new(population: &P) -> Self
     where
         P: Population,
-        P::State: SIR,
+        P::State: SIRLike,
     {
         let mut new = EpicurveReporter {
             n_iter: 0,
@@ -48,7 +48,7 @@ impl<W, P, const N: usize> Reporter<W, P> for EpicurveReporter<W, P, { N }>
 where
     W: World,
     P: Population,
-    P::State: Enumerable,
+    P::State: EpiModel,
 {
     fn process(&mut self, n: usize, world: &W, population: &P) {
         self.epicurves.process(n, world, population);
@@ -61,7 +61,7 @@ impl<W, P, const N: usize> GrowableReporter<W, P> for EpicurveReporter<W, P, { N
 where
     W: World,
     P: Population,
-    P::State: Enumerable,
+    P::State: EpiModel,
 {
     fn register_reporter(&mut self, n_steps: usize, reporter: Box<dyn Reporter<W, P>>) {
         self.reporters.register_reporter(n_steps, reporter)

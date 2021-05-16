@@ -1,300 +1,254 @@
-use crate::{
-    prelude::*,
-    sim::{Agent, State},
-};
+use crate::sim::State;
+use paste::paste;
 use serde::{Deserialize, Serialize};
 
-pub trait Enumerable {
+/// Basic trait for all compartment-like epidemic models. This includes all the
+/// SIR family of models and possibly other more generic cases.
+///
+/// An Epi model has a defined CARDINALITY that designates the number of
+/// different basic states an agent can be in. Those states can have further
+/// attached information (e.g., is infected with some given severity level) which
+/// are not accounted for the CARDINALITY of a model.
+///
+/// The index() method converts a state to the corresponding integer representation
+pub trait EpiModel: Sized + Clone {
+    /// Maximum number of epidemiological states
     const CARDINALITY: usize;
-    fn index(&self) -> usize;
-}
 
-pub trait SIR: Enumerable + Default {
+    // Index of the susceptible state.
     const S: usize;
-    const I: usize;
-    const R: usize;
+
+    // Index of the dead state.
     const D: usize;
 
+    /// A type that represents the disease associated with the epidemiological
+    /// model. Use the unity type to signal an abstract epidemiological models
+    /// not associated with a concrete disease.
+    type Disease;
+
+    /// An additional clinical state that may describe other parameters of the
+    /// contamination like severity, access to healthcare, etc.
+    type Clinical;
+
+    /// The index associated with the current epidemiological state. This is a
+    /// simple mapping that usually depends on the epidemic model. For a SIR-like
+    /// model, for instance, can be something like susceptible => 0,
+    /// infectious => 1, recovered => 2, dead => 3.
+    fn index(&self) -> usize;
+
+    /// Return true if agent has been contaminated with disease irrespective of
+    /// the current clinical state.
+    ///
+    /// The default implementation simply negates self.is_susceptible().
+    fn is_contaminated(&self) -> bool {
+        !self.is_susceptible()
+    }
+
+    /// Return true if agent is susceptible to be contaminated with disease
+    /// irrespective of the current clinical state.
     fn is_susceptible(&self) -> bool {
         self.index() == Self::S
     }
-    fn is_infectious(&self) -> bool {
-        self.index() == Self::I
+
+    /// Return true if agent is able to contaminate other agents. It must return
+    /// true even if the probability of contamination is very low.
+    fn is_contagious(&self) -> bool;
+
+    /// Return true if one agent can contaminate the other. This must return true
+    /// if contagion is, in principle, possible. Further external restrictions
+    /// (like, e.g., physical distance) may make the infection impossible, but
+    /// this should be treated later in the pipeline.
+    fn can_contaminate(&self, other: &Self) -> bool {
+        self.is_contagious() && other.is_susceptible()
     }
-    fn is_recovered(&self) -> bool {
-        self.index() == Self::R
+
+    /// Return a copy of agent after interacting with other assuming that
+    /// contamination occur. This method return None if other is not contagious.
+    fn contaminated_from(&self, other: &Self) -> Option<Self> {
+        if other.can_contaminate(self) {
+            return Some(self.epistate_from(other));
+        }
+        return None;
     }
-    fn is_infecting(&self) -> bool {
-        self.is_infectious()
+
+    /// Return a copy of self by coping the epidemic state from other.
+    fn epistate_from(&self, other: &Self) -> Self {
+        other.clone()
     }
+
+    /// Return true if agent is dead from disease.
     fn is_dead(&self) -> bool {
         self.index() == Self::D
     }
-    fn expose(&mut self) {
-        self.infect()
+
+    /// Return true if agent is alive. This is just a negation of is_dead and
+    /// traits should generally implement only the former.
+    fn is_alive(&self) -> bool {
+        !self.is_dead()
     }
-    fn contaminated_from(&self, other: &Self) -> Option<Self>;
-    fn infect(&mut self);
 }
 
-pub trait SEIR: SIR {
+macro_rules! is_state {
+    ($name:ident, index=$idx:ident) => {
+        paste! {
+            #[doc = "Return true if agent is in the  `" $name "` state."]
+            fn [<is_ $name>](&self) -> bool {
+                self.index() == Self::$idx
+            }
+        }
+    };
+    ($name:ident) => {
+        paste! {
+            #[doc = "Return true if agent is in the  `" $name "` state."]
+            fn [<is_ $name>](&self) -> bool;
+        }
+    };
+    ($name:ident, $expr:expr) => {
+        paste! {
+            #[doc = "Return true if agent is in the  `" $name "` state."]
+            fn [<is_ $name>](&self) -> bool { $expr }
+        }
+    };
+    ($name:ident, |$var:ident| $expr:expr) => {
+        paste! {
+            #[doc = "Return true if agent is in the  `" $name "` state."]
+            fn [<is_ $name>](&self) -> bool {
+                let $var = self; $expr
+             }
+        }
+    };
+}
+
+/// The classical Susceptible, Infectious, Recovered model. This crate also
+/// assumes a distinct Dead state which is usually grouped with Recovered in the
+/// classical SIR model.
+pub trait SIRLike: EpiModel {
+    const I: usize;
+    const R: usize;
+
+    is_state!(infectious, index = I);
+    is_state!(recovered, index = R);
+    is_state!(dead, index = D);
+    is_state!(exposed);
+
+    /// Force exposure of agent to infection using the given clinical
+    /// parameters.
+    fn expose(&mut self, with: &Self::Clinical) {
+        self.infect(with)
+    }
+
+    /// Force exposure of agent to infection using the default clinical
+    /// parameters, if they exist.
+    fn expose_default(&mut self)
+    where
+        Self::Clinical: Default,
+    {
+        self.expose(&Self::Clinical::default())
+    }
+
+    /// Force exposure of agent to infection using the given clinical
+    /// parameters. Differently from expose() this method always puts agent
+    /// into a infectious state.
+    fn infect(&mut self, with: &Self::Clinical);
+
+    /// Like infect(), but uses the default infection parameters.
+    fn infect_default(&mut self)
+    where
+        Self::Clinical: Default,
+    {
+        self.infect(&Self::Clinical::default())
+    }
+}
+
+/// Extends the SIR model with an intermediary incubation time in the Exposed
+/// state in which a contaminated agent is not contagious yet.
+pub trait SEIRLike: SIRLike {
     const E: usize;
-
-    fn is_exposed(&self) -> bool {
-        self.index() == Self::E
-    }
 }
 
-pub trait SEAIR: SEIR {
+/// Extends the SEIR model with asymptomatic agents. Asymptomatics do not
+/// develop symptoms and severity of disease never aggravates, but they may
+/// transmit it to other agents (even if with a reduced transmissibility).
+pub trait SEAIRLike: SEIRLike {
     const A: usize;
-
-    fn is_asymptomatic(&self) -> bool {
-        self.index() == Self::A
-    }
+    is_state!(asymptomatic, index = A);
 }
 
-pub trait SEICHAR: SEAIR {
+/// Extends the SEAIR with a severity model in which agents start requiring
+/// healthcare. SEICHAR consider two levels:
+///
+/// Severe/Hospitalized:
+///     Agents that require access to simple healthcare facilities.
+/// Critical/ICU:
+///     Cases that are severe enough to require intensive care.    
+pub trait SEICHARLike: SEAIRLike {
     const C: usize;
     const H: usize;
-
-    fn is_severe(&self) -> bool {
-        self.index() == Self::H
-    }
-    
-    fn is_critical(&self) -> bool {
-        self.index() == Self::C
-    }
+    is_state!(severe, index = H);
+    is_state!(critical, index = C);
 }
 
-/* SIR MODEL ******************************************************************/
+////////////////////////////////////////////////////////////////////////////////
+// Enum-based implementations
+////////////////////////////////////////////////////////////////////////////////
 
+/// Basic enumeration that models Epidemic transmission.
+/// It has two type parameters: the first is usually an enumeration (or ()) and
+/// provides additional states to the contaminated phase and the second is a
+/// an arbitrary type that describe clinical parameters of the disease. Use ()
+/// if those parameters are not necessary.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
-pub enum SimpleSIR {
+pub enum Epidemic<T, C> {
     Susceptible,
-    Infectious,
-    Recovered,
-    Dead,
+    Contaminated(T),
+    Dead(C),
 }
 
-impl Enumerable for SimpleSIR {
-    const CARDINALITY: usize = 4;
-    fn index(&self) -> usize {
+impl<T, C> Epidemic<T, C> {
+    pub(crate) fn is_contaminated(&self) -> bool {
         match self {
-            Self::Susceptible => Self::S,
-            Self::Infectious => Self::I,
-            Self::Recovered => Self::R,
-            Self::Dead => Self::D,
+            Self::Contaminated(_) => true,
+            _ => false,
         }
     }
 }
 
-impl Default for SimpleSIR {
+impl<T, C> Epidemic<T, C> {
+    const C: usize = 1;
+}
+
+impl<T, C> Default for Epidemic<T, C> {
     fn default() -> Self {
         Self::Susceptible
     }
 }
 
-impl SIR for SimpleSIR {
+impl<T: Clone, C: Clone> EpiModel for Epidemic<T, C> {
+    const CARDINALITY: usize = 3;
     const S: usize = 0;
-    const I: usize = 1;
-    const R: usize = 2;
-    const D: usize = 3;
+    const D: usize = 2;
 
-    fn contaminated_from(&self, other: &Self) -> Option<Self> {
-        (other.is_infecting() && self.is_susceptible()).then(|| Self::Infectious)
-    }
+    type Clinical = C;
+    type Disease = ();
 
-    fn infect(&mut self) {
-        *self = Self::Infectious
-    }
-}
-
-impl State for SimpleSIR {}
-
-/* SEIR MODEL *****************************************************************/
-#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
-pub enum SimpleSEIR {
-    Susceptible,
-    Exposed,
-    Infectious,
-    Recovered,
-    Dead,
-}
-
-impl Enumerable for SimpleSEIR {
-    const CARDINALITY: usize = 5;
     fn index(&self) -> usize {
         match self {
             Self::Susceptible => Self::S,
-            Self::Exposed => Self::E,
-            Self::Infectious => Self::I,
-            Self::Recovered => Self::R,
-            Self::Dead => Self::D,
+            Self::Contaminated(_) => Self::C,
+            Self::Dead(_) => Self::D,
         }
     }
-}
 
-impl Default for SimpleSEIR {
-    fn default() -> Self {
-        Self::Susceptible
+    fn is_contagious(&self) -> bool {
+        self.is_contaminated()
     }
 }
 
-impl SIR for SimpleSEIR {
-    const S: usize = 0;
-    const I: usize = 2;
-    const R: usize = 3;
-    const D: usize = 4;
+////////////////////////////////////////////////////////////////////////////////
+// SEICHAR MODEL Implementation
+////////////////////////////////////////////////////////////////////////////////
 
-    fn contaminated_from(&self, other: &Self) -> Option<Self> {
-        (other.is_infecting() && self.is_susceptible()).then(|| Self::Exposed)
-    }
-
-    fn infect(&mut self) {
-        *self = Self::Infectious
-    }
-
-    fn expose(&mut self) {
-        *self = Self::Exposed
-    }
-}
-
-impl SEIR for SimpleSEIR {
-    const E: usize = 1;
-}
-
-impl State for SimpleSEIR {}
-
-/* SEAIR MODEL *****************************************************************/
-#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
-pub enum SimpleSEAIR {
-    Susceptible,
-    Exposed,
-    Asymptomatic,
-    Infectious,
-    Recovered,
-}
-
-impl Enumerable for SimpleSEAIR {
-    const CARDINALITY: usize = 5;
-    fn index(&self) -> usize {
-        match self {
-            Self::Susceptible => Self::S,
-            Self::Exposed => Self::E,
-            Self::Asymptomatic => Self::A,
-            Self::Infectious => Self::I,
-            Self::Recovered => Self::R,
-        }
-    }
-}
-
-impl Default for SimpleSEAIR {
-    fn default() -> Self {
-        Self::Susceptible
-    }
-}
-
-impl SIR for SimpleSEAIR {
-    const S: usize = 0;
-    const I: usize = 3;
-    const R: usize = 4;
-    const D: usize = 5;
-
-    fn contaminated_from(&self, other: &Self) -> Option<Self> {
-        (other.is_infecting() && self.is_susceptible()).then(|| Self::Exposed)
-    }
-
-    fn is_infecting(&self) -> bool {
-        self.is_asymptomatic() || self.is_infectious()
-    }
-
-    fn infect(&mut self) {
-        *self = Self::Infectious
-    }
-
-    fn expose(&mut self) {
-        *self = Self::Exposed
-    }
-}
-
-impl SEIR for SimpleSEAIR {
-    const E: usize = 1;
-}
-
-impl SEAIR for SimpleSEAIR {
-    const A: usize = 2;
-}
-
-impl State for SimpleSEAIR {}
-
-/* SEICHAR MODEL **************************************************************/
-#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
-pub enum SimpleSEICHAR {
-    Susceptible,
-    Exposed,
-    Infectious,
-    Critical,
-    Severe,
-    Asymptomatic,
-    Recovered,
-    Dead,
-}
-
-impl Enumerable for SimpleSEICHAR {
-    const CARDINALITY: usize = 7;
-    fn index(&self) -> usize {
-        match self {
-            Self::Susceptible => Self::S,
-            Self::Exposed => Self::E,
-            Self::Critical => Self::C,
-            Self::Severe => Self::H,
-            Self::Asymptomatic => Self::A,
-            Self::Infectious => Self::I,
-            Self::Recovered => Self::R,
-            Self::Dead => Self::D,
-        }
-    }
-}
-
-impl Default for SimpleSEICHAR {
-    fn default() -> Self {
-        Self::Susceptible
-    }
-}
-
-impl SIR for SimpleSEICHAR {
-    const S: usize = 0;
-    const I: usize = 2;
-    const R: usize = 6;
-    const D: usize = 7;
-
-    fn contaminated_from(&self, other: &Self) -> Option<Self> {
-        (other.is_infecting() && self.is_susceptible()).then(|| Self::Exposed)
-    }
-
-    fn infect(&mut self) {
-        *self = Self::Infectious
-    }
-
-    fn expose(&mut self) {
-        *self = Self::Exposed
-    }
-}
-
-impl SEIR for SimpleSEICHAR {
-    const E: usize = 1;
-}
-
-impl SEAIR for SimpleSEICHAR {
-    const A: usize = 5;
-}
-
-impl SEICHAR for SimpleSEICHAR {
-    const C: usize = 3;
-    const H: usize = 4;
-}
-
-impl State for SimpleSEICHAR {}
+/*
 
 /* SEICHAR/Variant model ******************************************************/
 #[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
@@ -341,7 +295,7 @@ impl VariantSEICHAR {
     }
 }
 
-impl Enumerable for VariantSEICHAR {
+impl EpiModel for VariantSEICHAR {
     const CARDINALITY: usize = 8;
 
     fn index(&self) -> usize {
@@ -358,22 +312,22 @@ impl Enumerable for VariantSEICHAR {
     }
 }
 
-impl SIR for VariantSEICHAR {
+impl SIRLike for VariantSEICHAR {
     const S: usize = 0;
     const I: usize = 2;
     const R: usize = 6;
     const D: usize = 7;
 
-    fn contaminated_from(&self, other: &Self) -> Option<Self> {
-        if self.is_susceptible() {
-            return match other {
-                Self::Infectious(v) => Some(Self::Exposed(*v)),
-                Self::Asymptomatic(v) => Some(Self::Exposed(*v)),
-                _ => None,
-            };
-        }
-        return None;
-    }
+    // fn contaminated_from(&self, other: &Self) -> Option<Self> {
+    //     if self.is_susceptible() {
+    //         return match other {
+    //             Self::Infectious(v) => Some(Self::Exposed(*v)),
+    //             Self::Asymptomatic(v) => Some(Self::Exposed(*v)),
+    //             _ => None,
+    //         };
+    //     }
+    //     return None;
+    // }
 
     fn infect(&mut self) {
         *self = Self::Infectious(Default::default())
@@ -384,15 +338,15 @@ impl SIR for VariantSEICHAR {
     }
 }
 
-impl SEIR for VariantSEICHAR {
+impl SEIRLike for VariantSEICHAR {
     const E: usize = 1;
 }
 
-impl SEAIR for VariantSEICHAR {
+impl SEAIRLike for VariantSEICHAR {
     const A: usize = 5;
 }
 
-impl SEICHAR for VariantSEICHAR {
+impl SEICHARLike for VariantSEICHAR {
     const C: usize = 3;
     const H: usize = 4;
 }
@@ -436,7 +390,7 @@ impl<T> StateStats<T> {
     }
 }
 
-impl<M: Enumerable> Enumerable for Agent<M> {
+impl<M: EpiModel> EpiModel for Agent<M> {
     const CARDINALITY: usize = M::CARDINALITY;
 
     fn index(&self) -> usize {
@@ -444,25 +398,25 @@ impl<M: Enumerable> Enumerable for Agent<M> {
     }
 }
 
-impl<M: SIR + Enumerable> SIR for Agent<M> {
+impl<M: SIRLike + EpiModel> SIRLike for Agent<M> {
     const S: usize = M::S;
     const I: usize = M::I;
     const R: usize = M::R;
     const D: usize = M::D;
 
-    fn contaminated_from(&self, other: &Self) -> Option<Self> {
-        self.state
-            .contaminated_from(&other.state)
-            .map(|state| Agent { id: self.id, state })
-    }
+    // fn contaminated_from(&self, other: &Self) -> Option<Self> {
+    //     self.state
+    //         .contaminated_from(&other.state)
+    //         .map(|state| Agent { id: self.id, state })
+    // }
 
-    fn infect(&mut self) {
-        self.state.infect()
-    }
+    // fn infect(&mut self) {
+    //     self.state.infect()
+    // }
 
-    fn expose(&mut self) {
-        self.state.expose()
-    }
+    // fn expose(&mut self) {
+    //     self.state.expose()
+    // }
 
     fn is_susceptible(&self) -> bool {
         self.state.is_susceptible()
@@ -476,11 +430,12 @@ impl<M: SIR + Enumerable> SIR for Agent<M> {
         self.state.is_recovered()
     }
 
-    fn is_infecting(&self) -> bool {
-        self.state.is_infecting()
-    }
+    // fn is_infecting(&self) -> bool {
+    //     self.state.is_infecting()
+    // }
 
     fn is_dead(&self) -> bool {
         self.state.is_dead()
     }
 }
+*/

@@ -1,5 +1,4 @@
-use crate::prelude::*;
-use crate::utils::{INF, NAN};
+use crate::prelude::{Real, INF, NAN};
 use getset::*;
 use serde::{Deserialize, Serialize};
 
@@ -195,7 +194,8 @@ pub fn sqr(x: Real) -> Real {
     x * x
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Deserialize, Serialize, Getters, CopyGetters, Setters)]
+#[getset(get_copy = "pub", set = "pub")]
 pub struct PointStats {
     mean: Real,
     std: Real,

@@ -2,7 +2,7 @@ use rand::Rng;
 
 use super::{HasAge, Population, State};
 use crate::{
-    prelude::{Age, AgeCount10, AgeDistrib10},
+    prelude::{Age, AgeCount10, AgeDistribution10},
     utils::random_ages,
 };
 use std::iter;
@@ -36,7 +36,7 @@ where
 }
 
 /// Creates a new population with ages.
-pub fn new_population_from_distribution<P, R>(n: usize, distrib: AgeDistrib10, rng: &mut R) -> P
+pub fn new_population_from_distribution<P, R>(n: usize, distrib: AgeDistribution10, rng: &mut R) -> P
 where
     P: Population,
     P::State: State + Default + HasAge,

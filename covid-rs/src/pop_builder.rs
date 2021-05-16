@@ -158,7 +158,7 @@ struct EpicurveBuilder<P, S> {
 impl<P, S> EpicurveBuilder<P, S>
 where
     P: Population,
-    P::State: SIR,
+    P::State: SIRLike,
     S: Sampler<P> + Clone,
 {
     fn new(data: &[P::State], params: &Params, smoothness: Real, sampler: &S) -> Self {

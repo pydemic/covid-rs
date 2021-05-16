@@ -30,7 +30,7 @@ pub struct Config {
     num_iter: usize,
     verbose: bool,
     params: ParamSet,
-    pop_distrib: Option<AgeDistrib10>,
+    pop_distrib: Option<AgeDistribution10>,
     pop_counts: Option<AgeCount10>,
     epicurve: Option<Epicurve>,
 }
@@ -69,10 +69,10 @@ pub struct TableRow {
 
 pub fn read_params_table(path: &str, params: &mut Params) -> Result<()> {
     let mut reader = csv::Reader::from_path(path)?;
-    let mut prob_severe: AgeDistrib10 = [0.0; 9];
-    let mut prob_asymptomatic: AgeDistrib10 = [0.0; 9];
-    let mut prob_critical: AgeDistrib10 = [0.0; 9];
-    let mut prob_death: AgeDistrib10 = [0.0; 9];
+    let mut prob_severe: AgeDistribution10 = [0.0; 9];
+    let mut prob_asymptomatic: AgeDistribution10 = [0.0; 9];
+    let mut prob_critical: AgeDistribution10 = [0.0; 9];
+    let mut prob_death: AgeDistribution10 = [0.0; 9];
 
     for (i, res) in reader.deserialize().enumerate() {
         let row: TableRow = res?;

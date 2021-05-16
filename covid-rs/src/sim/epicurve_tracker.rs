@@ -1,5 +1,5 @@
 use super::{Population, Reporter, State, World};
-use crate::prelude::Enumerable;
+use crate::prelude::EpiModel;
 use std::{fmt::Display, ops::Add};
 
 /// A struct with a list of vectors corresponding to the
@@ -14,6 +14,11 @@ where
     T: From<usize> + Display + Add<Output = T> + Copy + Default,
 {
     pub fn new() -> Self {
+        // SAFETY
+        // We need to create an array of empty vectors fo arbitrary size. Usually
+        // this would be done as [Vec::default(); N], but Rust does not support
+        // this with N >= 32, or if the size of N comes from a compilation constant
+        // that is yet unknown. 
         unsafe {
             // For now, we use an deprecated method since MaybeUninit is not
             // usable for variable-size arrays yet.
@@ -56,7 +61,7 @@ where
     pub fn update<P>(&mut self, population: &P, step: bool)
     where
         P: Population,
-        P::State: Enumerable,
+        P::State: EpiModel,
     {
         if step || self.size == 0 {
             self.step()
@@ -121,7 +126,7 @@ where
 impl<'a, T, W, P, S, const N: usize> Reporter<W, P> for EpicurveTracker<T, N>
 where
     W: World,
-    S: Enumerable + State,
+    S: EpiModel + State,
     P: Population<State = S>,
     T: From<usize> + Display + Add<Output = T> + Copy + Default,
 {

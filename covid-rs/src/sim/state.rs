@@ -1,6 +1,6 @@
 use rand::Rng;
 
-use crate::prelude::{Age, Params, SimpleSEAIR, SimpleSEICHAR, SimpleSEIR, SimpleSIR, SIR};
+use crate::prelude::{Age, Params, SIRLike};
 use std::fmt::Debug;
 
 /// Minimal bounds on agent States.
@@ -19,14 +19,14 @@ pub trait HasAge: State {
 }
 
 /// A trait for objects that have an compartment field with a SIR value.
-pub trait HasCompartiment: State {
-    type CompartmentModel: SIR;
+pub trait HasEpiModel: State {
+    type Model: SIRLike;
 
     /// Return the epidemiological compartment.
-    fn compartment(&self) -> Self::CompartmentModel;
+    fn epimodel(&self) -> Self::Model;
 
     /// Set value of the epidemiological state.
-    fn set_compartment(&mut self, value: Self::CompartmentModel) -> &mut Self;
+    fn set_epimodel(&mut self, value: Self::Model) -> &mut Self;
 }
 
 /// A trait for objects that can be deterministically updated in the given
@@ -37,7 +37,7 @@ pub trait Update<W: World>: State {
 
 /// A trait for objects that can be stochastically updated in the given
 /// World. Users must pass a random number generator in order to update
-// this objectobject
+// this object
 pub trait StochasticUpdate<W: World>: State {
     fn update_random<R: Rng>(&mut self, world: &W, rng: &mut R);
 }
@@ -56,123 +56,14 @@ impl<W: World> StochasticUpdate<W> for () {
     fn update_random<R: Rng>(&mut self, _world: &W, _: &mut R) {}
 }
 
-// Epidemic models //////////////////////////////////////////////////////////
-impl StochasticUpdate<Params> for SimpleSIR {
-    fn update_random<R: Rng>(&mut self, params: &Params, rng: &mut R) {
-        match self {
-            Self::Infectious => {
-                if rng.gen_bool(params.infectious_transition_prob()) {
-                    *self = Self::Recovered
-                }
-            }
-            _ => (),
-        }
-    }
-}
-
-impl StochasticUpdate<Params> for SimpleSEIR {
-    fn update_random<R: Rng>(&mut self, params: &Params, rng: &mut R) {
-        match self {
-            Self::Exposed => {
-                if rng.gen_bool(params.incubation_transition_prob()) {
-                    *self = Self::Infectious
-                }
-            }
-            Self::Infectious => {
-                if rng.gen_bool(params.infectious_transition_prob()) {
-                    *self = Self::Recovered
-                }
-            }
-            _ => (),
-        }
-    }
-}
-
-impl StochasticUpdate<Params> for SimpleSEAIR {
-    fn update_random<R: Rng>(&mut self, params: &Params, rng: &mut R) {
-        match self {
-            Self::Exposed => {
-                if rng.gen_bool(params.incubation_transition_prob()) {
-                    if rng.gen_bool(params.prob_asymptomatic(40)) {
-                        *self = Self::Asymptomatic
-                    } else {
-                        *self = Self::Infectious
-                    }
-                }
-            }
-            Self::Asymptomatic => {
-                if rng.gen_bool(params.infectious_transition_prob()) {
-                    *self = Self::Recovered
-                }
-            }
-            Self::Infectious => {
-                if rng.gen_bool(params.infectious_transition_prob()) {
-                    *self = Self::Recovered
-                }
-            }
-            _ => (),
-        }
-    }
-}
-
-impl StochasticUpdate<Params> for SimpleSEICHAR {
-    fn update_random<R: Rng>(&mut self, params: &Params, rng: &mut R) {
-        let age = 40; // TODO
-        match self {
-            Self::Exposed => {
-                if rng.gen_bool(params.incubation_transition_prob()) {
-                    if rng.gen_bool(params.prob_asymptomatic(age)) {
-                        *self = Self::Asymptomatic
-                    } else {
-                        *self = Self::Infectious
-                    }
-                }
-            }
-            Self::Asymptomatic => {
-                if rng.gen_bool(params.infectious_transition_prob()) {
-                    *self = Self::Recovered
-                }
-            }
-            Self::Infectious => {
-                if rng.gen_bool(params.infectious_transition_prob()) {
-                    if rng.gen_bool(params.prob_severe(age)) {
-                        *self = Self::Severe
-                    } else {
-                        *self = Self::Recovered
-                    }
-                }
-            }
-            Self::Severe => {
-                if rng.gen_bool(params.severe_transition_prob()) {
-                    if rng.gen_bool(params.prob_critical(age)) {
-                        *self = Self::Critical
-                    } else {
-                        *self = Self::Recovered
-                    }
-                }
-            }
-            Self::Critical => {
-                if rng.gen_bool(params.critical_transition_prob()) {
-                    if rng.gen_bool(params.prob_death(age)) {
-                        *self = Self::Dead
-                    } else {
-                        *self = Self::Recovered
-                    }
-                }
-            }
-            _ => (),
-        }
-    }
-}
-
 impl<T> StochasticUpdate<Params> for T
 where
-    T: HasCompartiment,
-    T::CompartmentModel: StochasticUpdate<Params>,
+    T: HasEpiModel,
+    T::Model: StochasticUpdate<Params>,
 {
     fn update_random<R: Rng>(&mut self, params: &Params, rng: &mut R) {
-        let mut value = self.compartment();
+        let mut value = self.epimodel();
         value.update_random(params, rng);
-        self.set_compartment(value);
+        self.set_epimodel(value);
     }
 }
