@@ -1,7 +1,7 @@
 use rand::Rng;
 
 use crate::{
-    epidemic::{EpiModel, Params, SEAIRLike, SEICHARLike, SEIRLike, SIRLike},
+    epidemic::{EpiModel, Params, SEICHARLike, SEIRLike},
     prelude::Real,
     sim::{State, StochasticUpdate},
 };
@@ -86,7 +86,8 @@ impl<C: Clone> EpiModel for SEICHAR<C> {
     }
 }
 
-impl<C: Clone> SIRLike for SEICHAR<C> {
+impl<C: Clone> SEIRLike for SEICHAR<C> {
+    const E: usize = 1;
     const I: usize = 2;
     const R: usize = 6;
 
@@ -103,17 +104,10 @@ impl<C: Clone> SIRLike for SEICHAR<C> {
     }
 }
 
-impl<C: Clone> SEIRLike for SEICHAR<C> {
-    const E: usize = 1;
-}
-
-impl<C: Clone> SEAIRLike for SEICHAR<C> {
-    const A: usize = 5;
-}
-
 impl<C: Clone> SEICHARLike for SEICHAR<C> {
     const C: usize = 3;
     const H: usize = 4;
+    const A: usize = 5;
 }
 
 impl<C: State> StochasticUpdate<Params> for SEICHAR<C> {

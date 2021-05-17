@@ -1,6 +1,6 @@
 use rand::Rng;
 
-use crate::prelude::{Age, Params, SIRLike};
+use crate::prelude::{Age, EpiModel, Params};
 use std::fmt::Debug;
 
 /// Minimal bounds on agent States.
@@ -20,7 +20,7 @@ pub trait HasAge: State {
 
 /// A trait for objects that have an compartment field with a SIR value.
 pub trait HasEpiModel: State {
-    type Model: SIRLike;
+    type Model: EpiModel;
 
     /// Return the epidemiological compartment.
     fn epimodel(&self) -> Self::Model;

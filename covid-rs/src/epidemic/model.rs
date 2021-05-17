@@ -168,17 +168,18 @@ macro_rules! is_state {
     };
 }
 
-/// The classical Susceptible, Infectious, Recovered model. This crate also
-/// assumes a distinct Dead state which is usually grouped with Recovered in the
-/// classical SIR model.
-pub trait SIRLike: EpiModel {
+/// The classical Susceptible, Exposed, Infectious, Recovered model. This crate
+/// also assumes a distinct Dead state which is usually grouped with Recovered
+/// in the classical SIR model.
+pub trait SEIRLike: EpiModel {
+    const E: usize;
     const I: usize;
     const R: usize;
 
+    is_state!(exposed, index = E);
     is_state!(infectious, index = I);
     is_state!(recovered, index = R);
     is_state!(dead, index = D);
-    is_state!(exposed);
 
     /// Force exposure of agent to infection using the given clinical
     /// parameters.
@@ -209,226 +210,28 @@ pub trait SIRLike: EpiModel {
     }
 }
 
-/// Extends the SIR model with an intermediary incubation time in the Exposed
-/// state in which a contaminated agent is not contagious yet.
-pub trait SEIRLike: SIRLike {
-    const E: usize;
-}
-
-/// Extends the SEIR model with asymptomatic agents. Asymptomatics do not
-/// develop symptoms and severity of disease never aggravates, but they may
-/// transmit it to other agents (even if with a reduced transmissibility).
-pub trait SEAIRLike: SEIRLike {
-    const A: usize;
-    is_state!(asymptomatic, index = A);
-}
-
-/// Extends the SEAIR with a severity model in which agents start requiring
-/// healthcare. SEICHAR consider two levels:
+/// Extends the SEIR with asymptomatic agents and a severity model in which
+/// agents may require healthcare.
+///
+/// Asymptomatics do not develop symptoms and severity of disease never
+/// aggravates, but they may transmit it to other agents (even if with a
+/// reduced transmissibility).
+///
+/// SEICHAR consider severity levels:
 ///
 /// Severe/Hospitalized:
 ///     Agents that require access to simple healthcare facilities.
 /// Critical/ICU:
 ///     Cases that are severe enough to require intensive care.    
-pub trait SEICHARLike: SEAIRLike {
+pub trait SEICHARLike: SEIRLike {
     const C: usize;
     const H: usize;
+    const A: usize;
+    is_state!(asymptomatic, index = A);
     is_state!(severe, index = H);
     is_state!(critical, index = C);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// SEICHAR MODEL Implementation
+// Trait implementations
 ////////////////////////////////////////////////////////////////////////////////
-
-/*
-
-/* SEICHAR/Variant model ******************************************************/
-#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
-pub enum VariantSEICHAR {
-    Susceptible,
-    Exposed(Variant),
-    Asymptomatic(Variant),
-    Infectious(Variant),
-    Severe(Variant),
-    Critical(Variant),
-    Recovered(Variant),
-    Dead(Variant),
-}
-
-impl VariantSEICHAR {
-    pub const HEADER_SHORT: [&'static str; 8] = ["S", "E", "I", "C", "H", "A", "R", "D"];
-    pub const HEADER_LONG: [&'static str; 8] = [
-        "susceptible",
-        "exposed",
-        "infectious",
-        "critical",
-        "severe",
-        "asymptomatic",
-        "recovered",
-        "dead",
-    ];
-
-    pub fn csv_header() -> String {
-        Self::HEADER_SHORT.join(",")
-    }
-
-    pub fn csv(self) -> String {
-        let ch = Self::HEADER_SHORT[self.index()];
-        return match self {
-            VariantSEICHAR::Susceptible => format!("{}", ch),
-            VariantSEICHAR::Exposed(v) => format!("{}{}", ch, v.csv()),
-            VariantSEICHAR::Infectious(v) => format!("{}{}", ch, v.csv()),
-            VariantSEICHAR::Severe(v) => format!("{}{}", ch, v.csv()),
-            VariantSEICHAR::Critical(v) => format!("{}{}", ch, v.csv()),
-            VariantSEICHAR::Asymptomatic(v) => format!("{}{}", ch, v.csv()),
-            VariantSEICHAR::Recovered(v) => format!("{}{}", ch, v.csv()),
-            VariantSEICHAR::Dead(v) => format!("{}{}", ch, v.csv()),
-        };
-    }
-}
-
-impl EpiModel for VariantSEICHAR {
-    const CARDINALITY: usize = 8;
-
-    fn index(&self) -> usize {
-        match self {
-            Self::Susceptible => Self::S,
-            Self::Exposed(_) => Self::E,
-            Self::Infectious(_) => Self::I,
-            Self::Critical(_) => Self::C,
-            Self::Severe(_) => Self::H,
-            Self::Asymptomatic(_) => Self::A,
-            Self::Recovered(_) => Self::R,
-            Self::Dead(_) => Self::D,
-        }
-    }
-}
-
-impl SIRLike for VariantSEICHAR {
-    const S: usize = 0;
-    const I: usize = 2;
-    const R: usize = 6;
-    const D: usize = 7;
-
-    // fn contaminated_from(&self, other: &Self) -> Option<Self> {
-    //     if self.is_susceptible() {
-    //         return match other {
-    //             Self::Infectious(v) => Some(Self::Exposed(*v)),
-    //             Self::Asymptomatic(v) => Some(Self::Exposed(*v)),
-    //             _ => None,
-    //         };
-    //     }
-    //     return None;
-    // }
-
-    fn infect(&mut self) {
-        *self = Self::Infectious(Default::default())
-    }
-
-    fn expose(&mut self) {
-        *self = Self::Exposed(Default::default())
-    }
-}
-
-impl SEIRLike for VariantSEICHAR {
-    const E: usize = 1;
-}
-
-impl SEAIRLike for VariantSEICHAR {
-    const A: usize = 5;
-}
-
-impl SEICHARLike for VariantSEICHAR {
-    const C: usize = 3;
-    const H: usize = 4;
-}
-
-impl Default for VariantSEICHAR {
-    fn default() -> Self {
-        VariantSEICHAR::Susceptible
-    }
-}
-
-impl State for VariantSEICHAR {}
-
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct StateStats<T> {
-    pub susceptible: T,
-    pub exposed: T,
-    pub infectious: T,
-    pub critical: T,
-    pub severe: T,
-    pub asymptomatic: T,
-    pub recovered: T,
-    pub dead: T,
-}
-
-impl<T> StateStats<T> {
-    pub fn map<S, F>(&self, f: F) -> StateStats<S>
-    where
-        F: Fn(T) -> S,
-        T: Clone,
-    {
-        StateStats {
-            susceptible: f(self.susceptible.clone()),
-            exposed: f(self.exposed.clone()),
-            infectious: f(self.infectious.clone()),
-            critical: f(self.critical.clone()),
-            severe: f(self.severe.clone()),
-            asymptomatic: f(self.asymptomatic.clone()),
-            recovered: f(self.recovered.clone()),
-            dead: f(self.dead.clone()),
-        }
-    }
-}
-
-impl<M: EpiModel> EpiModel for Agent<M> {
-    const CARDINALITY: usize = M::CARDINALITY;
-
-    fn index(&self) -> usize {
-        self.state.index()
-    }
-}
-
-impl<M: SIRLike + EpiModel> SIRLike for Agent<M> {
-    const S: usize = M::S;
-    const I: usize = M::I;
-    const R: usize = M::R;
-    const D: usize = M::D;
-
-    // fn contaminated_from(&self, other: &Self) -> Option<Self> {
-    //     self.state
-    //         .contaminated_from(&other.state)
-    //         .map(|state| Agent { id: self.id, state })
-    // }
-
-    // fn infect(&mut self) {
-    //     self.state.infect()
-    // }
-
-    // fn expose(&mut self) {
-    //     self.state.expose()
-    // }
-
-    fn is_susceptible(&self) -> bool {
-        self.state.is_susceptible()
-    }
-
-    fn is_infectious(&self) -> bool {
-        self.state.is_infectious()
-    }
-
-    fn is_recovered(&self) -> bool {
-        self.state.is_recovered()
-    }
-
-    // fn is_infecting(&self) -> bool {
-    //     self.state.is_infecting()
-    // }
-
-    fn is_dead(&self) -> bool {
-        self.state.is_dead()
-    }
-}
-*/

@@ -1,5 +1,5 @@
 use super::{EpicurveTracker, GrowableReporter, Population, Reporter, ReporterList, World};
-use crate::prelude::{EpiModel, SIRLike};
+use crate::prelude::{EpiModel};
 use std::fmt::Debug;
 
 /// Epicurve reporter that can be extended with an arbitrary list of FnMut()
@@ -14,7 +14,7 @@ impl<W, P, const N: usize> EpicurveReporter<W, P, { N }> {
     pub fn new(population: &P) -> Self
     where
         P: Population,
-        P::State: SIRLike,
+        P::State: EpiModel,
     {
         let mut new = EpicurveReporter {
             n_iter: 0,

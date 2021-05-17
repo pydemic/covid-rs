@@ -1,6 +1,5 @@
 use super::{Agent, Id, State, StochasticUpdate, Update, World};
-use crate::prelude::{EpiModel, SEAIRLike, SEICHARLike, SEIRLike, SIRLike, Sampler};
-use log::trace;
+use crate::prelude::{EpiModel, SEICHARLike, SEIRLike};
 use paste::paste;
 use rand::prelude::{Rng, SliceRandom};
 use std::collections::HashSet;
@@ -166,7 +165,7 @@ pub trait Population {
         f: impl Fn(usize, &mut Self::State) -> bool,
     ) -> usize
     where
-        Self::State: SIRLike,
+        Self::State: EpiModel,
     {
         let from_list = |n, rng, pop: &mut Self| {
             let mut susceptibles = vec![];
@@ -209,18 +208,18 @@ pub trait Population {
 
     // Methods for SIR-based populations //////////////////////////////////////
     compartment_methods!(susceptible, for=EpiModel);
-    compartment_methods!(contagious, for=SIRLike);
     compartment_methods!(dead, for=EpiModel);
-    compartment_methods!(infectious, for=SIRLike);
-    compartment_methods!(recovered, for=SIRLike);
+    compartment_methods!(contagious, for=SEIRLike);
+    compartment_methods!(infectious, for=SEIRLike);
+    compartment_methods!(recovered, for=SEIRLike);
     compartment_methods!(exposed, for=SEIRLike);
-    compartment_methods!(asymptomatic, for=SEAIRLike);
+    compartment_methods!(asymptomatic, for=SEICHARLike);
     compartment_methods!(severe, for=SEICHARLike);
     compartment_methods!(critical, for=SEICHARLike);
 
-    fn count_sir(&self) -> (usize, usize, usize, usize)
+    fn count_sir(&self) -> [usize; 4]
     where
-        Self::State: SIRLike + EpiModel,
+        Self::State: SEIRLike,
     {
         let (mut s, mut i, mut r, mut n) = (0, 0, 0, 0);
         self.each_agent(&mut |_, st: &Self::State| {
@@ -233,10 +232,10 @@ pub trait Population {
             }
             n += 1;
         });
-        return (s, i, r, n);
+        return [s, i, r, n];
     }
 
-    fn count_seir(&self) -> (usize, usize, usize, usize, usize)
+    fn count_seir(&self) -> [usize; 5]
     where
         Self::State: SEIRLike,
     {
@@ -253,12 +252,12 @@ pub trait Population {
             }
             n += 1;
         });
-        return (s, e, i, r, n);
+        return [s, e, i, r, n];
     }
 
-    fn count_seair(&self) -> (usize, usize, usize, usize, usize, usize)
+    fn count_seair(&self) -> [usize; 6]
     where
-        Self::State: SEAIRLike,
+        Self::State: SEICHARLike,
     {
         let (mut s, mut e, mut a, mut i, mut r, mut n) = (0, 0, 0, 0, 0, 0);
         self.each_agent(&mut |_, st: &Self::State| {
@@ -275,7 +274,33 @@ pub trait Population {
             }
             n += 1;
         });
-        return (s, e, a, i, r, n);
+        return [s, e, a, i, r, n];
+    }
+
+    fn count_seichar(&self) -> [usize; 8]
+    where
+        Self::State: SEICHARLike,
+    {
+        let (mut s, mut e, mut i, mut c, mut h, mut a, mut r, mut n) = (0, 0, 0, 0, 0, 0, 0, 0);
+        self.each_agent(&mut |_, st: &Self::State| {
+            if st.is_susceptible() {
+                s += 1;
+            } else if st.is_exposed() {
+                e += 1;
+            } else if st.is_infectious() {
+                i += 1;
+            } else if st.is_critical() {
+                c += 1;
+            } else if st.is_severe() {
+                h += 1;
+            } else if st.is_asymptomatic() {
+                a += 1;
+            } else if st.is_recovered() {
+                r += 1;
+            }
+            n += 1;
+        });
+        return [s, e, a, i, c, h, r, n];
     }
 }
 

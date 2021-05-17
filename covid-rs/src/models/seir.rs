@@ -1,6 +1,10 @@
 use rand::Rng;
 
-use crate::{epidemic::{EpiModel, Params, SEIRLike, SIRLike}, prelude::Real, sim::{State, StochasticUpdate}};
+use crate::{
+    epidemic::{EpiModel, Params, SEIRLike},
+    prelude::Real,
+    sim::{State, StochasticUpdate},
+};
 
 /// Enumeration used internally to distinguish Exposed from Infectious in SEIR.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
@@ -68,7 +72,8 @@ impl<C: Clone> EpiModel for SEIR<C> {
     }
 }
 
-impl<C: Clone> SIRLike for SEIR<C> {
+impl<C: Clone> SEIRLike for SEIR<C> {
+    const E: usize = 1;
     const I: usize = 2;
     const R: usize = 3;
 
@@ -83,10 +88,6 @@ impl<C: Clone> SIRLike for SEIR<C> {
     fn infect(&mut self, with: &Self::Clinical) {
         *self = Self::Infectious(with.clone())
     }
-}
-
-impl<C: Clone> SEIRLike for SEIR<C> {
-    const E: usize = 1;
 }
 
 impl<C: State> StochasticUpdate<Params> for SEIR<C> {

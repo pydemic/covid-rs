@@ -1,6 +1,10 @@
 use rand::Rng;
 
-use crate::{epidemic::{EpiModel, Params, SIRLike}, prelude::Real, sim::{State, StochasticUpdate}};
+use crate::{
+    epidemic::{EpiModel, Params, SEIRLike},
+    prelude::Real,
+    sim::{State, StochasticUpdate},
+};
 
 /// Concrete implementation of the SIR model. This model is generic over a
 /// clinical parameter type C. If no distinction should be made between different
@@ -69,7 +73,8 @@ impl<C: Clone> EpiModel for SIR<C> {
     }
 }
 
-impl<C: Clone> SIRLike for SIR<C> {
+impl<C: Clone> SEIRLike for SIR<C> {
+    const E: usize = 1;
     const I: usize = 1;
     const R: usize = 2;
 

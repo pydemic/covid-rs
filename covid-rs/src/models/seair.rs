@@ -1,6 +1,6 @@
 use rand::Rng;
 
-use crate::{epidemic::{EpiModel, Params, SEAIRLike, SEIRLike, SIRLike}, prelude::Real, sim::{State, StochasticUpdate}};
+use crate::{epidemic::{EpiModel, Params, SEICHARLike, SEIRLike}, prelude::Real, sim::{State, StochasticUpdate}};
 
 /// Enumeration used internally to distinguish Exposed, Infectious and Asymptomatic
 /// in SEAIR.
@@ -74,7 +74,8 @@ impl<C: Clone> EpiModel for SEAIR<C> {
     }
 }
 
-impl<C: Clone> SIRLike for SEAIR<C> {
+impl<C: Clone> SEIRLike for SEAIR<C> {
+    const E: usize = 1;
     const I: usize = 3;
     const R: usize = 4;
 
@@ -91,11 +92,9 @@ impl<C: Clone> SIRLike for SEAIR<C> {
     }
 }
 
-impl<C: Clone> SEIRLike for SEAIR<C> {
-    const E: usize = 1;
-}
-
-impl<C: Clone> SEAIRLike for SEAIR<C> {
+impl<C: Clone> SEICHARLike for SEAIR<C> {
+    const C: usize = Self::I;
+    const H: usize = Self::I;
     const A: usize = 2;
 }
 
