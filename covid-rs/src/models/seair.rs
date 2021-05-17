@@ -1,27 +1,45 @@
 use rand::Rng;
 
-use crate::{
-    epidemic::{EpiModel, Params, SEAIRLike, SEIRLike, SIRLike},
-    sim::{State, StochasticUpdate},
-};
-
-use super::sir::SCR;
+use crate::{epidemic::{EpiModel, Params, SEAIRLike, SEIRLike, SIRLike}, prelude::Real, sim::{State, StochasticUpdate}};
 
 /// Enumeration used internally to distinguish Exposed, Infectious and Asymptomatic
 /// in SEAIR.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
-pub enum InnerSEAIR<C> {
+pub enum SEAIR<C> {
+    Susceptible,
     Exposed(C),
     Infectious(C),
     Asymptomatic(C),
+    Recovered(C),
+    Dead(C),
 }
 
-type SEAIR<C> = SCR<InnerSEAIR<C>, C>;
+impl<C> SEAIR<C> {
+    pub fn clinical(&self) -> Option<C>
+    where
+        C: Clone,
+    {
+        match self {
+            Self::Susceptible => None,
+            Self::Exposed(c)
+            | Self::Asymptomatic(c)
+            | Self::Infectious(c)
+            | Self::Recovered(c)
+            | Self::Dead(c) => Some(c.clone()),
+        }
+    }
+}
+
+impl<C> Default for SEAIR<C> {
+    fn default() -> Self {
+        return Self::Susceptible;
+    }
+}
 
 impl<C: State> State for SEAIR<C> {}
 
 impl<C: Clone> EpiModel for SEAIR<C> {
-    const CARDINALITY: usize = 5;
+    const CARDINALITY: usize = 6;
     const S: usize = 0;
     const D: usize = 5;
 
@@ -31,16 +49,28 @@ impl<C: Clone> EpiModel for SEAIR<C> {
     fn index(&self) -> usize {
         match self {
             Self::Susceptible => Self::S,
-            Self::Contaminating(InnerSEAIR::Exposed(_)) => Self::E,
-            Self::Contaminating(InnerSEAIR::Asymptomatic(_)) => Self::A,
-            Self::Contaminating(InnerSEAIR::Infectious(_)) => Self::I,
+            Self::Exposed(_) => Self::E,
+            Self::Asymptomatic(_) => Self::A,
+            Self::Infectious(_) => Self::I,
             Self::Recovered(_) => Self::R,
             Self::Dead(_) => Self::D,
         }
     }
 
-    fn is_contagious(&self) -> bool {
-        self.is_contaminating()
+    fn new_infectious_with(clinical: &Self::Clinical) -> Self {
+        Self::Infectious(clinical.clone())
+    }
+
+    fn contagion_odds(&self) -> Real {
+        match self {
+            Self::Infectious(_) => 1.0,
+            Self::Asymptomatic(_) => 0.42,
+            _ => 0.0,
+        }
+    }
+
+    fn transfer_contamination_from(&mut self, other: &Self) -> bool {
+        other.clinical().map(|c| *self = Self::Exposed(c)).is_some()
     }
 }
 
@@ -53,11 +83,11 @@ impl<C: Clone> SIRLike for SEAIR<C> {
     }
 
     fn expose(&mut self, with: &Self::Clinical) {
-        *self = self.epistate_from(&SCR::Contaminating(InnerSEAIR::Exposed(with.clone())))
+        *self = Self::Exposed(with.clone())
     }
 
     fn infect(&mut self, with: &Self::Clinical) {
-        *self = self.epistate_from(&SCR::Contaminating(InnerSEAIR::Infectious(with.clone())))
+        *self = Self::Infectious(with.clone())
     }
 }
 
@@ -74,33 +104,31 @@ impl<C: State> StochasticUpdate<Params> for SEAIR<C> {
         // FIXME: implement age-independent parameters!
         let age = 40;
 
-        self.update_inner_or(|inner| {
-            match inner {
-                InnerSEAIR::Exposed(c) => {
-                    if rng.gen_bool(params.incubation_transition_prob()) {
-                        if rng.gen_bool(params.prob_asymptomatic(40)) {
-                            *inner = InnerSEAIR::Asymptomatic(c.clone())
-                        } else {
-                            *inner = InnerSEAIR::Infectious(c.clone())
-                        }
-                    }
-                }
-                InnerSEAIR::Asymptomatic(c) => {
-                    if rng.gen_bool(params.infectious_transition_prob()) {
-                        return Some(SCR::Recovered(c.clone()));
-                    }
-                }
-                InnerSEAIR::Infectious(c) => {
-                    if rng.gen_bool(params.infectious_transition_prob()) {
-                        if rng.gen_bool(params.case_fatality_ratio(age)) {
-                            return Some(SCR::Dead(c.clone()));
-                        } else {
-                            return Some(SCR::Recovered(c.clone()));
-                        }
+        match self {
+            Self::Exposed(c) => {
+                if rng.gen_bool(params.incubation_transition_prob()) {
+                    if rng.gen_bool(params.prob_asymptomatic(40)) {
+                        *self = Self::Asymptomatic(c.clone())
+                    } else {
+                        *self = Self::Infectious(c.clone())
                     }
                 }
             }
-            return None;
-        })
+            Self::Asymptomatic(c) => {
+                if rng.gen_bool(params.infectious_transition_prob()) {
+                    *self = Self::Recovered(c.clone());
+                }
+            }
+            Self::Infectious(c) => {
+                if rng.gen_bool(params.infectious_transition_prob()) {
+                    if rng.gen_bool(params.case_fatality_ratio(age)) {
+                        *self = Self::Dead(c.clone());
+                    } else {
+                        *self = Self::Recovered(c.clone());
+                    }
+                }
+            }
+            _ => (),
+        }
     }
 }

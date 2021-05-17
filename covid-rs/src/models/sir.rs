@@ -1,64 +1,34 @@
 use rand::Rng;
 
-use crate::{
-    epidemic::{EpiModel, Params, SIRLike},
-    sim::{State, StochasticUpdate},
-};
-
-/// Base enumeration that describes all SIR-like models. We group all states
-/// that may contaminate into a single Contaminating() enumeration, which can
-/// be subdivided later into different categories such as Exposed, Infectious,
-/// Asymptomatic, etc.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
-pub enum SCR<T, C> {
-    Susceptible,
-    Contaminating(T),
-    Recovered(C),
-    Dead(C),
-}
-
-impl<T, C> SCR<T, C> {
-    pub(crate) fn is_contaminating(&self) -> bool {
-        match self {
-            Self::Contaminating(_) => true,
-            _ => false,
-        }
-    }
-
-    pub(crate) fn update_inner(&mut self, f: impl FnOnce(&mut T))
-    where
-        C: Clone,
-    {
-        match self {
-            Self::Contaminating(inner) => f(inner),
-            _ => (),
-        }
-    }
-
-    pub(crate) fn update_inner_or(&mut self, f: impl FnOnce(&mut T) -> Option<Self>)
-    where
-        C: Clone,
-    {
-        match self {
-            Self::Contaminating(inner) => {
-                if let Some(st) = f(inner) {
-                    *self = st;
-                }
-            }
-            _ => ()
-        }
-    }
-}
+use crate::{epidemic::{EpiModel, Params, SIRLike}, prelude::Real, sim::{State, StochasticUpdate}};
 
 /// Concrete implementation of the SIR model. This model is generic over a
 /// clinical parameter type C. If no distinction should be made between different
 /// clinical states besides being in ant of the Susceptible, Infectious, Recovered
 /// states, C can be safely set to ().
-pub type SIR<C> = SCR<C, C>;
+#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
+pub enum SIR<C> {
+    Susceptible,
+    Infectious(C),
+    Recovered(C),
+    Dead(C),
+}
 
-impl<T: State, C: State> State for SCR<T, C> {}
+impl<C> SIR<C> {
+    pub fn clinical(&self) -> Option<C>
+    where
+        C: Clone,
+    {
+        match self {
+            Self::Susceptible => None,
+            Self::Infectious(c) | Self::Recovered(c) | Self::Dead(c) => Some(c.clone()),
+        }
+    }
+}
 
-impl<T, C> Default for SCR<T, C> {
+impl<C: State> State for SIR<C> {}
+
+impl<C> Default for SIR<C> {
     fn default() -> Self {
         Self::Susceptible
     }
@@ -74,14 +44,28 @@ impl<C: Clone> EpiModel for SIR<C> {
     fn index(&self) -> usize {
         match self {
             Self::Susceptible => Self::S,
-            Self::Contaminating(_) => Self::I,
+            Self::Infectious(_) => Self::I,
             Self::Recovered(_) => Self::R,
             Self::Dead(_) => Self::D,
         }
     }
 
-    fn is_contagious(&self) -> bool {
-        self.is_contaminating()
+    fn new_infectious_with(clinical: &Self::Clinical) -> Self {
+        Self::Infectious(clinical.clone())
+    }
+
+    fn contagion_odds(&self) -> Real {
+        match self {
+            Self::Infectious(_) => 1.0,
+            _ => 0.0,
+        }
+    }
+
+    fn transfer_contamination_from(&mut self, other: &Self) -> bool {
+        other
+            .clinical()
+            .map(|c| *self = Self::Infectious(c))
+            .is_some()
     }
 }
 
@@ -94,14 +78,14 @@ impl<C: Clone> SIRLike for SIR<C> {
     }
 
     fn infect(&mut self, with: &Self::Clinical) {
-        *self = self.epistate_from(&Self::Contaminating(with.clone()))
+        *self = Self::Infectious(with.clone())
     }
 }
 
 impl<C: State> StochasticUpdate<Params> for SIR<C> {
     fn update_random<R: Rng>(&mut self, params: &Params, rng: &mut R) {
         match self {
-            Self::Contaminating(c) => {
+            Self::Infectious(c) => {
                 if rng.gen_bool(params.infectious_transition_prob()) {
                     *self = Self::Recovered(c.clone())
                 }

@@ -1,5 +1,8 @@
-use covid::{epidemic::*, prelude::*, sim::*};
-use rand::prelude::{SeedableRng, SmallRng};
+use covid::{epidemic::*, models, prelude::*, sim::*};
+use rand::{
+    prelude::{SeedableRng, SmallRng},
+    Rng,
+};
 use std::cell::RefCell;
 
 fn juxt<'a, A: 'a, B: 'a>(
@@ -53,10 +56,14 @@ where
         let rng = &mut *self.rng.borrow_mut();
         let population_update = &mut self.population_update;
         let world_update = &mut self.world_update;
+        let sampler = &self.sampler;
 
         for n in 0..n_steps {
+            // Default updates
             self.population.update_random(&self.world, rng);
-            self.population.update_sampler(&self.sampler, rng);
+            let cases = sampler.update_epimodel_population(&mut self.population, rng);
+
+            // Arbitrary updates
             population_update(&self.world, &mut self.population);
             world_update(&mut self.world, &self.population);
             self.reporter.process(n, &self.world, &self.population)
@@ -80,33 +87,9 @@ where
     }
 }
 
-enum DiseaseState<S, T> {
-    Susceptible,
-    Contaminated(S, T),
-    Recovered(T),
-    Dead(T),
-}
-
-enum EI {
-    Exposed,
-    Infectiouos,
-}
-enum EAI {
-    SEIR(EI),
-    Asymptomatic,
-}
-
-enum Bool { True, False}
-
-type SIR_t = DiseaseState<(), ()>;
-type SEIR_t = DiseaseState<EI, ()>;
-type SEAIR_t = DiseaseState<EAI, ()>;
-type SEAIR_B = DiseaseState<EAI, Bool>;
-type SEAIR_b = DiseaseState<EAI, bool>;
-type SEAIR_u = DiseaseState<EAI, usize>;
-
 pub fn main() {
-    type T = SEIR;
+    type T = models::SEICHAR<()>;
+    // type T = models::SEAIR<()>;
     use simple_logger::SimpleLogger;
     SimpleLogger::new().init().unwrap();
 
@@ -115,26 +98,27 @@ pub fn main() {
 
     // Infect elements
     pop.set_agents(&[
-        (0, &T::Infectious),
-        (1, &T::Infectious),
-        (98, &T::Infectious),
-        (99, &T::Infectious),
+        (0, &T::new_infectious()),
+        (1, &T::new_infectious()),
+        (2, &T::new_infectious()),
+        (3, &T::new_infectious()),
+        (4, &T::new_infectious()),
+        (5, &T::new_infectious()),
+        (6, &T::new_infectious()),
+        (7, &T::new_infectious()),
+        (8, &T::new_infectious()),
+        (9, &T::new_infectious()),
     ]);
 
     let mut sim: Simulation<_, _, _, { T::CARDINALITY }> =
         Simulation::new_simple(params, pop, 4.5, 0.095);
-    sim.run(240);
+    sim.run(180);
     // println!("{:#?}", pop);
     // println!("{:#?}", params);
-    println!("{}", sim.render_epicurve_csv("S,E,I,R,D"));
-    
+    println!("{}", sim.render_epicurve_csv("S,E,A,I,R,D"));
+
     use std::mem::size_of;
-    println!("SIR_t: {}", size_of::<SIR_t>());
-    println!("SEIR_t: {}", size_of::<SEIR_t>());
-    println!("SEAIR_t: {}", size_of::<SEAIR_t>());
-    println!("SEAIR_b: {}", size_of::<SEAIR_b>());
-    println!("SEAIR_B: {}", size_of::<SEAIR_B>());
-    println!("SEAIR_u: {}", size_of::<SEAIR_u>());
+    println!("SIR_t: {}", size_of::<models::SEIR<()>>());
     println!("usize: {}", size_of::<usize>());
     println!("bool: {}", size_of::<bool>());
 }

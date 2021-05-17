@@ -44,6 +44,12 @@ pub struct Params {
     #[serde(skip)]
     infectious_transition_prob: Real,
 
+    /// Probability of transition infectious -> ? in a single day, include incubation
+    /// period in this calculation
+    #[getset(get_copy = "pub")]
+    #[serde(skip)]
+    serial_transition_prob: Real,
+
     /// Probability of transition severe -> ? in a single day.
     #[getset(get_copy = "pub")]
     #[serde(skip)]
@@ -95,6 +101,7 @@ impl Params {
     pub fn set_incubation_period(&mut self, value: Real) -> &mut Self {
         self.incubation_period = value;
         self.incubation_transition_prob = 1.0 - (-1. / value).exp();
+        self.serial_transition_prob = 1.0 - (-1. / self.serial_period()).exp();
         return self;
     }
 
@@ -102,6 +109,7 @@ impl Params {
     pub fn set_infectious_period(&mut self, value: Real) -> &mut Self {
         self.infectious_period = value;
         self.infectious_transition_prob = 1.0 - (-1. / value).exp();
+        self.serial_transition_prob = 1.0 - (-1. / self.serial_period()).exp();
         return self;
     }
 
@@ -126,6 +134,12 @@ impl Params {
         return self.set_incubation_period(0.0);
     }
 
+    /// Infectious + incubation period. This tends to make SIR models
+    /// behave more similarly to their SEIR counterparts.
+    pub fn serial_period(&mut self) -> Real {
+        self.infectious_period + self.incubation_period
+    }
+
     /// Probability of death for cases
     pub fn case_fatality_ratio(&self, age: Age) -> Real {
         self.prob_death(age) * self.prob_critical(age) * self.prob_severe(age)
@@ -139,27 +153,7 @@ impl Params {
 
 impl Default for Params {
     fn default() -> Self {
-        let mut new = Params {
-            incubation_period: 0.0,
-            infectious_period: 0.0,
-            severe_period: 0.0,
-            critical_period: 0.0,
-            incubation_transition_prob: 0.0,
-            infectious_transition_prob: 0.0,
-            severe_transition_prob: 0.0,
-            critical_transition_prob: 0.0,
-            infectiousness: 1.0,
-            prob_asymptomatic: AgeParam::Scalar(PROB_ASYMPTOMATIC),
-            prob_severe: AgeParam::Scalar(PROB_SEVERE),
-            prob_critical: AgeParam::Scalar(PROB_CRITICAL),
-            prob_death: AgeParam::Scalar(PROB_DEATH),
-        };
-
-        new.set_incubation_period(INCUBATION_PERIOD);
-        new.set_infectious_period(INFECTIOUS_PERIOD);
-        new.set_severe_period(SEVERE_PERIOD);
-        new.set_critical_period(CRITICAL_PERIOD);
-        return new;
+        _Params::default().into()
     }
 }
 
@@ -202,6 +196,7 @@ impl From<_Params> for Params {
             critical_period: 0.0,
             incubation_transition_prob: 0.0,
             infectious_transition_prob: 0.0,
+            serial_transition_prob: 0.0,
             severe_transition_prob: 0.0,
             critical_transition_prob: 0.0,
             infectiousness: p.infectiousness,

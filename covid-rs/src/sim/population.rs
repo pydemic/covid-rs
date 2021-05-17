@@ -1,5 +1,6 @@
 use super::{Agent, Id, State, StochasticUpdate, Update, World};
-use crate::prelude::{EpiModel, Sampler, SEAIRLike, SEICHARLike, SEIRLike, SIRLike};
+use crate::prelude::{EpiModel, SEAIRLike, SEICHARLike, SEIRLike, SIRLike, Sampler};
+use log::trace;
 use paste::paste;
 use rand::prelude::{Rng, SliceRandom};
 use std::collections::HashSet;
@@ -62,14 +63,25 @@ pub trait Population {
     fn count(&self) -> usize;
 
     /// Get an agent by id.
-    fn get_agent(&self, id: Id) -> Option<Agent<Self::State>>;
+    fn get_agent(&self, id: Id) -> Option<&Self::State>;
+
+    /// Get a pair of agents by id.
+    fn get_pair(&self, i: Id, j: Id) -> Option<(&Self::State, &Self::State)> {
+        match (self.get_agent(i), self.get_agent(j)) {
+            (Some(x), Some(y)) => Some((x, y)),
+            _ => None,
+        }
+    }
+
+    /// Get a pair of agents by id.
+    fn get_pair_mut(&mut self, i: Id, j: Id) -> Option<(&mut Self::State, &mut Self::State)>;
 
     /// Get agents by ids. If you need to fetch multiple agents, it can be more
     /// convenient to use this.
-    fn get_agents(&self, ids: impl IntoIterator<Item = Id>) -> Vec<Agent<Self::State>> {
-        let mut out: Vec<Agent<Self::State>> = Vec::new();
+    fn get_agents(&self, ids: impl IntoIterator<Item = Id>) -> Vec<(Id, &Self::State)> {
+        let mut out = Vec::new();
         for id in ids.into_iter() {
-            self.get_agent(id).map(|a| out.push(a.clone()));
+            self.get_agent(id).map(|a| out.push((id, a)));
         }
         return out;
     }
@@ -137,43 +149,6 @@ pub trait Population {
         <Self as Population>::State: StochasticUpdate<W>,
     {
         self.each_agent_mut(&mut |_, st: &mut Self::State| st.update_random(world, rng));
-    }
-
-    fn update_sampler<S, R>(&mut self, sampler: &S, rng: &mut R) -> usize
-    where
-        R: Rng,
-        S: Sampler<Self>,
-        Self: Sized,
-        Self::State: SIRLike,
-    {
-        self.update_sampler_with(sampler, rng, |src, dest| dest.contaminated_from(src))
-    }
-
-    fn update_sampler_with<S, R>(
-        &mut self,
-        sampler: &S,
-        rng: &mut R,
-        f: impl FnMut(&Self::State, &Self::State) -> Option<Self::State>,
-    ) -> usize
-    where
-        R: Rng,
-        S: Sampler<Self>,
-        Self: Sized,
-        Self::State: SIRLike,
-    {
-        let mut cases = 0;
-        let mut g = f;
-
-        for (i, j) in sampler.sample_infection_pairs(self, rng) {
-            if let (Some(src), Some(dest)) = (self.get_agent(i), self.get_agent(j)) {
-                if let Some(contaminated) = g(&src.state, &dest.state) {
-                    self.set_agent(j, &contaminated);
-                    cases += 1;
-                }
-            }
-            cases += 1;
-        }
-        return cases;
     }
 
     fn update<W>(&mut self, world: &W)
@@ -380,11 +355,8 @@ where
         self.as_state_slice().len()
     }
 
-    fn get_agent(&self, id: Id) -> Option<Agent<Self::State>> {
-        self.as_state_slice().get(id).map(|ag| Agent {
-            id,
-            state: ag.clone(),
-        })
+    fn get_agent(&self, id: Id) -> Option<&Self::State> {
+        self.as_state_slice().get(id)
     }
 
     fn set_agent(&mut self, id: Id, state: &Self::State) -> &mut Self {
@@ -441,6 +413,22 @@ where
         }
 
         return out;
+    }
+
+    fn get_pair_mut(&mut self, i: Id, j: Id) -> Option<(&mut Self::State, &mut Self::State)> {
+        let slice = self.as_state_mut_slice();
+        let n = slice.len();
+        if i == j || i >= n || j >= n {
+            return None;
+        } else {
+            // Safety: we can have two mutable borrows to elements of the slice
+            // since the previous line guarantees that elements are not the same
+            unsafe {
+                let a = &mut *(slice.get_unchecked_mut(i) as *mut _);
+                let b = &mut *(slice.get_unchecked_mut(j) as *mut _);
+                return Some((a, b));
+            }
+        }
     }
 }
 
@@ -517,8 +505,8 @@ impl<S: State> Population for Vec<Agent<S>> {
         self.len()
     }
 
-    fn get_agent(&self, id: Id) -> Option<Agent<Self::State>> {
-        self.get(id).map(|ag| ag.clone())
+    fn get_agent(&self, id: Id) -> Option<&Self::State> {
+        self.get(id).map(|ag| &ag.state)
     }
 
     fn set_agent(&mut self, id: Id, state: &Self::State) -> &mut Self {
@@ -576,5 +564,21 @@ impl<S: State> Population for Vec<Agent<S>> {
         }
 
         return out;
+    }
+
+    fn get_pair_mut(&mut self, i: Id, j: Id) -> Option<(&mut Self::State, &mut Self::State)> {
+        let slice = self.as_mut_slice();
+        let n = slice.len();
+        if i == j || i >= n || j >= n {
+            return None;
+        } else {
+            // Safety: we can have two mutable borrows to elements of the slice
+            // since the previous line guarantees that elements are not the same
+            unsafe {
+                let a: &mut Agent<Self::State> = &mut *(slice.get_unchecked_mut(i) as *mut _);
+                let b: &mut Agent<Self::State> = &mut *(slice.get_unchecked_mut(j) as *mut _);
+                return Some((&mut a.state, &mut b.state));
+            }
+        }
     }
 }

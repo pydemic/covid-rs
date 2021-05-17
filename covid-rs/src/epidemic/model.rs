@@ -1,5 +1,6 @@
-use crate::sim::State;
+use crate::{prelude::Real, sim::State};
 use paste::paste;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 /// Basic trait for all compartment-like epidemic models. This includes all the
@@ -36,6 +37,16 @@ pub trait EpiModel: Sized + Clone {
     /// infectious => 1, recovered => 2, dead => 3.
     fn index(&self) -> usize;
 
+    /// Create new infectious individual with the given clinical parameters.
+    fn new_infectious_with(clinical: &Self::Clinical) -> Self;
+
+    fn new_infectious() -> Self
+    where
+        Self::Clinical: Default,
+    {
+        Self::new_infectious_with(&Self::Clinical::default())
+    }
+
     /// Return true if agent has been contaminated with disease irrespective of
     /// the current clinical state.
     ///
@@ -52,7 +63,14 @@ pub trait EpiModel: Sized + Clone {
 
     /// Return true if agent is able to contaminate other agents. It must return
     /// true even if the probability of contamination is very low.
-    fn is_contagious(&self) -> bool;
+    fn is_contagious(&self) -> bool {
+        self.contagion_odds() > 0.0
+    }
+
+    /// Return the relative probability of contamination from self. Usually this
+    /// should be equal to 1.0 for the default infectious state some ratio
+    /// compared to this state.
+    fn contagion_odds(&self) -> Real;
 
     /// Return true if one agent can contaminate the other. This must return true
     /// if contagion is, in principle, possible. Further external restrictions
@@ -63,17 +81,48 @@ pub trait EpiModel: Sized + Clone {
     }
 
     /// Return a copy of agent after interacting with other assuming that
-    /// contamination occur. This method return None if other is not contagious.
+    /// contamination should occur. This method return None if `other` is not able
+    /// to contaminate `self`
     fn contaminated_from(&self, other: &Self) -> Option<Self> {
         if other.can_contaminate(self) {
-            return Some(self.epistate_from(other));
+            let mut new = self.clone();
+            new.transfer_contamination_from(other);
+            return Some(new);
         }
         return None;
     }
 
-    /// Return a copy of self by coping the epidemic state from other.
-    fn epistate_from(&self, other: &Self) -> Self {
-        other.clone()
+    /// Transfer contamination state from other and return a boolean telling if
+    /// the contamination occurred or not. This method should force contamination
+    /// even when it is not clinically possible (e.g., self is recovered).
+    /// It is used by contaminate_from(), which checks basic clinical plausibility
+    /// and uses this method to transfer contamination to a susceptible agent
+    /// if contamination is possible.
+    ///
+    /// This method should not simply clone the contamination state from `other`
+    /// but rather modify self to the proper state that describes the start
+    /// of an infection. For instance, in a model like SEIR, if other is in some
+    /// infected state, like `SEIR::Recovered(params)`, self will be modified
+    /// to `SEIR::Exposed(params)`, independently from its current state.
+    fn transfer_contamination_from(&mut self, other: &Self) -> bool;
+
+    /// Contaminate `self` from `other` if contamination is plausible.
+    fn contaminate_from(&mut self, other: &Self) -> bool {
+        if other.can_contaminate(self) {
+            self.transfer_contamination_from(other);
+            return true;
+        }
+        return false;
+    }
+
+    /// Contaminate `self` from `other` with probability `prob`, if
+    /// contamination is plausible.
+    fn contaminate_from_prob<R: Rng>(&mut self, other: &Self, prob: Real, rng: &mut R) -> bool {
+        if other.can_contaminate(self) && rng.gen_bool(prob) {
+            self.transfer_contamination_from(other);
+            return true;
+        }
+        return false;
     }
 
     /// Return true if agent is dead from disease.
@@ -186,62 +235,6 @@ pub trait SEICHARLike: SEAIRLike {
     const H: usize;
     is_state!(severe, index = H);
     is_state!(critical, index = C);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Enum-based implementations
-////////////////////////////////////////////////////////////////////////////////
-
-/// Basic enumeration that models Epidemic transmission.
-/// It has two type parameters: the first is usually an enumeration (or ()) and
-/// provides additional states to the contaminated phase and the second is a
-/// an arbitrary type that describe clinical parameters of the disease. Use ()
-/// if those parameters are not necessary.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
-pub enum Epidemic<T, C> {
-    Susceptible,
-    Contaminated(T),
-    Dead(C),
-}
-
-impl<T, C> Epidemic<T, C> {
-    pub(crate) fn is_contaminated(&self) -> bool {
-        match self {
-            Self::Contaminated(_) => true,
-            _ => false,
-        }
-    }
-}
-
-impl<T, C> Epidemic<T, C> {
-    const C: usize = 1;
-}
-
-impl<T, C> Default for Epidemic<T, C> {
-    fn default() -> Self {
-        Self::Susceptible
-    }
-}
-
-impl<T: Clone, C: Clone> EpiModel for Epidemic<T, C> {
-    const CARDINALITY: usize = 3;
-    const S: usize = 0;
-    const D: usize = 2;
-
-    type Clinical = C;
-    type Disease = ();
-
-    fn index(&self) -> usize {
-        match self {
-            Self::Susceptible => Self::S,
-            Self::Contaminated(_) => Self::C,
-            Self::Dead(_) => Self::D,
-        }
-    }
-
-    fn is_contagious(&self) -> bool {
-        self.is_contaminated()
-    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
