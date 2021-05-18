@@ -1,7 +1,6 @@
-use crate::{prelude::Real, sim::State};
+use crate::{prelude::Real, sim::HasEpiModel};
 use paste::paste;
 use rand::Rng;
-use serde::{Deserialize, Serialize};
 
 /// Basic trait for all compartment-like epidemic models. This includes all the
 /// SIR family of models and possibly other more generic cases.
@@ -15,11 +14,12 @@ use serde::{Deserialize, Serialize};
 pub trait EpiModel: Sized + Clone {
     /// Maximum number of epidemiological states
     const CARDINALITY: usize;
+    const CSV_HEADER: &'static str;
 
-    // Index of the susceptible state.
+    /// Index of the susceptible state.
     const S: usize;
 
-    // Index of the dead state.
+    /// Index of the dead state.
     const D: usize;
 
     /// A type that represents the disease associated with the epidemiological
@@ -235,3 +235,82 @@ pub trait SEICHARLike: SEIRLike {
 ////////////////////////////////////////////////////////////////////////////////
 // Trait implementations
 ////////////////////////////////////////////////////////////////////////////////
+impl<T: HasEpiModel + Clone> EpiModel for T
+where
+    Self: Default,
+    T::Model: EpiModel,
+{
+    const CARDINALITY: usize = T::Model::CARDINALITY;
+    const CSV_HEADER: &'static str = T::Model::CSV_HEADER;
+    const S: usize = T::Model::S;
+    const D: usize = T::Model::D;
+    type Disease = <<T as HasEpiModel>::Model as EpiModel>::Disease;
+    type Clinical = <<T as HasEpiModel>::Model as EpiModel>::Clinical;
+
+    default fn index(&self) -> usize {
+        self.epimodel().index()
+    }
+
+    default fn new_infectious_with(clinical: &Self::Clinical) -> Self {
+        let mut new = Self::default();
+        new.set_epimodel(<Self as HasEpiModel>::Model::new_infectious_with(clinical));
+        return new;
+    }
+
+    default fn is_contaminated(&self) -> bool {
+        self.epimodel().is_contaminated()
+    }
+
+    default fn is_susceptible(&self) -> bool {
+        self.epimodel().is_susceptible()
+    }
+
+    default fn is_contagious(&self) -> bool {
+        self.epimodel().is_contagious()
+    }
+
+    default fn contagion_odds(&self) -> Real {
+        self.epimodel().contagion_odds()
+    }
+
+    default fn can_contaminate(&self, other: &Self) -> bool {
+        self.epimodel().can_contaminate(other.epimodel())
+    }
+
+    default fn contaminated_from(&self, other: &Self) -> Option<Self> {
+        self.epimodel()
+            .contaminated_from(other.epimodel())
+            .map(|m| {
+                let mut new = self.clone();
+                new.set_epimodel(m);
+                return new;
+            })
+    }
+
+    default fn transfer_contamination_from(&mut self, other: &Self) -> bool {
+        self.epimodel_mut()
+            .transfer_contamination_from(other.epimodel())
+    }
+
+    default fn contaminate_from(&mut self, other: &Self) -> bool {
+        self.epimodel_mut().contaminate_from(other.epimodel())
+    }
+
+    default fn contaminate_from_prob<R: Rng>(
+        &mut self,
+        other: &Self,
+        prob: Real,
+        rng: &mut R,
+    ) -> bool {
+        self.epimodel_mut()
+            .contaminate_from_prob(other.epimodel(), prob, rng)
+    }
+
+    default fn is_dead(&self) -> bool {
+        self.epimodel().is_dead()
+    }
+
+    default fn is_alive(&self) -> bool {
+        self.epimodel().is_alive()
+    }
+}

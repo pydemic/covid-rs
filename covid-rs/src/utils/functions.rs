@@ -2,9 +2,6 @@ use crate::prelude::*;
 use rand::distributions::WeightedIndex;
 use rand::prelude::*;
 
-
-
-
 /// Sample n ages from a non-empty vector of probabilities given as pairs
 /// (age_group, prob). Probabilities do not need to be normalized and age
 /// groups are iterpreted the range from the given number to the next value.

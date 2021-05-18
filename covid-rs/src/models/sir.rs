@@ -1,16 +1,16 @@
-use rand::Rng;
-
 use crate::{
-    epidemic::{EpiModel, Params, SEIRLike},
+    epidemic::{EpiModel, SEIRLike},
+    params::UniversalSEIRParams,
     prelude::Real,
-    sim::{State, StochasticUpdate},
+    sim::RandomUpdate,
 };
+use rand::Rng;
 
 /// Concrete implementation of the SIR model. This model is generic over a
 /// clinical parameter type C. If no distinction should be made between different
 /// clinical states besides being in ant of the Susceptible, Infectious, Recovered
 /// states, C can be safely set to ().
-#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
 pub enum SIR<C> {
     Susceptible,
     Infectious(C),
@@ -30,8 +30,6 @@ impl<C> SIR<C> {
     }
 }
 
-impl<C: State> State for SIR<C> {}
-
 impl<C> Default for SIR<C> {
     fn default() -> Self {
         Self::Susceptible
@@ -40,6 +38,7 @@ impl<C> Default for SIR<C> {
 
 impl<C: Clone> EpiModel for SIR<C> {
     const CARDINALITY: usize = 4;
+    const CSV_HEADER: &'static str = "S,I,R,D";
     const S: usize = 0;
     const D: usize = 3;
     type Disease = ();
@@ -87,12 +86,19 @@ impl<C: Clone> SEIRLike for SIR<C> {
     }
 }
 
-impl<C: State> StochasticUpdate<Params> for SIR<C> {
-    fn update_random<R: Rng>(&mut self, params: &Params, rng: &mut R) {
+impl<C: Clone, P> RandomUpdate<P> for SIR<C>
+where
+    P: UniversalSEIRParams,
+{
+    fn random_update<R: Rng>(&mut self, params: &P, rng: &mut R) {
         match self {
             Self::Infectious(c) => {
                 if rng.gen_bool(params.infectious_transition_prob()) {
-                    *self = Self::Recovered(c.clone())
+                    if rng.gen_bool(params.infection_fatality_ratio()) {
+                        *self = Self::Dead(c.clone())
+                    } else {
+                        *self = Self::Recovered(c.clone())
+                    }
                 }
             }
             _ => (),

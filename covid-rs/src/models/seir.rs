@@ -1,13 +1,14 @@
 use rand::Rng;
 
 use crate::{
-    epidemic::{EpiModel, Params, SEIRLike},
+    epidemic::{EpiModel, SEIRLike},
+    params::UniversalSEIRParams,
     prelude::Real,
-    sim::{State, StochasticUpdate},
+    sim::RandomUpdate,
 };
 
 /// Enumeration used internally to distinguish Exposed from Infectious in SEIR.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
 pub enum SEIR<C> {
     Susceptible,
     Exposed(C),
@@ -36,10 +37,9 @@ impl<C: Default> Default for SEIR<C> {
     }
 }
 
-impl<C: State> State for SEIR<C> {}
-
 impl<C: Clone> EpiModel for SEIR<C> {
     const CARDINALITY: usize = 5;
+    const CSV_HEADER: &'static str = "S,E,I,R,D";
     const S: usize = 0;
     const D: usize = 4;
 
@@ -90,11 +90,11 @@ impl<C: Clone> SEIRLike for SEIR<C> {
     }
 }
 
-impl<C: State> StochasticUpdate<Params> for SEIR<C> {
-    fn update_random<R: Rng>(&mut self, params: &Params, rng: &mut R) {
-        // FIXME: implement age-independent parameters!
-        let age = 40;
-
+impl<C: Clone, P> RandomUpdate<P> for SEIR<C>
+where
+    P: UniversalSEIRParams,
+{
+    fn random_update<R: Rng>(&mut self, params: &P, rng: &mut R) {
         match self {
             Self::Exposed(c) => {
                 if rng.gen_bool(params.incubation_transition_prob()) {
@@ -103,7 +103,7 @@ impl<C: State> StochasticUpdate<Params> for SEIR<C> {
             }
             Self::Infectious(c) => {
                 if rng.gen_bool(params.infectious_transition_prob()) {
-                    if rng.gen_bool(params.infection_fatality_ratio(age)) {
+                    if rng.gen_bool(params.infection_fatality_ratio()) {
                         *self = Self::Dead(c.clone());
                     } else {
                         *self = Self::Recovered(c.clone());

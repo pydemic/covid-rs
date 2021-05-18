@@ -21,33 +21,79 @@ pub type Age = u8;
 
 /// An age distribution array in bins of 10 years.
 pub type AgeDistribution10 = [Real; 9];
+pub const AGE_DISTRIBUTION_UNIFORM: AgeDistribution10 = [1.0; 9];
+pub const AGE_DISTRIBUTION_BRAZIL: AgeDistribution10 = [
+    0.16119603,
+    0.1589343,
+    0.15688859,
+    0.15378477,
+    0.12989326,
+    0.1076683,
+    0.07449618,
+    0.03880221,
+    0.01539567 + 0.0029407,
+];
 
 /// Count population in each bin of 10 years.
 pub type AgeCount10 = [u32; 9];
 
 /// Simple trait to simplify the use of age-dependent values/parameters.
-pub trait ForAge<T> {
+/// Basically, ForAge data is simply an encoding for a function like
+/// fn(Age) -> Output;
+pub trait ForAge {
+    type Output;
+
     /// Return the content of parameter for agents with the given age.
-    fn for_age(&self, age: Age) -> T;
+    fn for_age(&self, age: Age) -> Self::Output;
 }
 
-impl<T> ForAge<T> for T
-where
-    T: Copy,
-{
-    fn for_age(&self, age: Age) -> T {
-        *self
+impl<T: Clone> ForAge for AgeIndependent<T> {
+    type Output = T;
+
+    #[inline(always)]
+    fn for_age(&self, _: Age) -> T {
+        self.0.clone()
     }
 }
 
-impl<T> ForAge<T> for [T; 9]
+impl<T, R> ForAge for T
+where
+    T: Fn(Age) -> R,
+{
+    type Output = R;
+
+    fn for_age(&self, age: Age) -> R {
+        return self(age);
+    }
+}
+
+impl<T> ForAge for [T; 9]
 where
     T: Copy,
 {
+    type Output = T;
+
+    #[inline]
     fn for_age(&self, age: Age) -> T {
         self[(age / 10).max(8) as usize]
     }
 }
+
+/// A wrapper to declare independent values
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub struct AgeIndependent<T>(T);
+
+pub trait ToAgeIndependent
+where
+    Self: Sized,
+{
+    #[inline(always)]
+    fn age_independent(self) -> AgeIndependent<Self> {
+        AgeIndependent(self)
+    }
+}
+
+impl<T: Sized> ToAgeIndependent for T {}
 
 /// A simple enumeration that may contain a scalar param or an AgeDistribution10
 /// value
@@ -58,13 +104,25 @@ pub enum AgeParam {
     Distribution(AgeDistribution10),
 }
 
+impl AgeParam {
+    #[inline]
+    pub fn map(&self, f: impl Fn(Real) -> Real) -> Self {
+        match self {
+            Self::Scalar(x) => Self::Scalar(f(*x)),
+            Self::Distribution(xs) => Self::Distribution(xs.map(f)),
+        }
+    }
+}
+
 impl Default for AgeParam {
     fn default() -> Self {
         AgeParam::Scalar(0.)
     }
 }
 
-impl ForAge<Real> for AgeParam {
+impl ForAge for AgeParam {
+    type Output = Real;
+
     fn for_age(&self, age: Age) -> Real {
         match self {
             &AgeParam::Scalar(v) => v,

@@ -3,7 +3,6 @@ use crate::{
     sim::{HasAge, Population},
 };
 use getset::*;
-use log::trace;
 use ndarray::prelude::*;
 use rand::prelude::*;
 
@@ -43,8 +42,8 @@ where
         P::State: EpiModel,
     {
         let mut cases = 0;
-        self.update_epimodel_population_with(population, rng, |src, dest| {
-            trace!(target: "sampler", "contamination pair: (from: {:?}, to: {:?})", src, dest);
+        self.update_epimodel_population_with(population, rng, |_, src, _, dest| {
+            // trace!(target: "sampler", "contamination pair: (from: {:?}, to: {:?})", src, dest);
             if dest.contaminate_from(src) {
                 cases += 1
             }
@@ -59,7 +58,7 @@ where
         &self,
         population: &mut P,
         rng: &mut impl Rng,
-        f: impl FnMut(&mut P::State, &mut P::State),
+        f: impl FnMut(usize, &mut P::State, usize, &mut P::State),
     ) where
         P::State: EpiModel,
     {
@@ -70,7 +69,7 @@ where
                 continue;
             }
             if let Some((src, dest)) = population.get_pair_mut(i, j) {
-                g(src, dest)
+                g(i, src, j, dest)
             }
         }
     }

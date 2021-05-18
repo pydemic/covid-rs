@@ -1,29 +1,20 @@
-use super::{Population, World};
+pub type ReporterFn<W, P> = Box<dyn Reporter<W, P>>;
+pub type ReporterList<W, P> = Vec<(usize, ReporterFn<W, P>)>;
 
-pub type ReporterList<W, P> = Vec<(usize, Box<dyn Reporter<W, P>>)>;
-
-/// Trait that implements a method that temporarely scans the population and
+/// Trait that implements a method that temporarily scans the population and
 /// preform some action like collecting statistics, health metrics, emit signals,
 /// etc.
 ///
 /// Functions, boxed functions, closures, etc can be executed interpreted as
 /// reporters.  
-pub trait Reporter<W, P>
-where
-    W: World,
-    P: Population,
-{
+pub trait Reporter<W, P> {
     /// Register a reporter function to be called every n_steps.
     fn process(&mut self, n: usize, world: &W, population: &P);
 }
 
 /// A GrowableReporter can include arbitrary functions that execute during the
 /// reporting phase.
-pub trait GrowableReporter<W, P>: Reporter<W, P>
-where
-    W: World,
-    P: Population,
-{
+pub trait GrowableReporter<W, P>: Reporter<W, P> {
     /// Register a reporter function to be called every n_steps.
     fn register_reporter(&mut self, n_steps: usize, reporter: Box<dyn Reporter<W, P>>);
 }
@@ -32,21 +23,13 @@ where
 // Reporter instances
 /////////////////////////////////////////////////////////////////////////////
 
-impl<W, P> Reporter<W, P> for fn(&P)
-where
-    W: World,
-    P: Population,
-{
+impl<W, P> Reporter<W, P> for fn(&P) {
     fn process(&mut self, _: usize, _: &W, population: &P) {
         self(population)
     }
 }
 
-impl<W, P> Reporter<W, P> for fn(&W, &P)
-where
-    W: World,
-    P: Population,
-{
+impl<W, P> Reporter<W, P> for fn(&W, &P) {
     fn process(&mut self, _: usize, world: &W, population: &P) {
         self(world, population)
     }
@@ -54,8 +37,6 @@ where
 
 impl<W, P, F> Reporter<W, P> for F
 where
-    W: World,
-    P: Population,
     F: FnMut(usize, &W, &P),
 {
     fn process(&mut self, n: usize, world: &W, population: &P) {
@@ -63,18 +44,12 @@ where
     }
 }
 
-impl<W, P> Reporter<W, P> for ()
-where
-    W: World,
-    P: Population,
-{
+impl<W, P> Reporter<W, P> for () {
     fn process(&mut self, _n: usize, _world: &W, _population: &P) {}
 }
 
 impl<W, P, R1, R2> Reporter<W, P> for (R1, R2)
 where
-    W: World,
-    P: Population,
     R1: Reporter<W, P>,
     R2: Reporter<W, P>,
 {
@@ -86,8 +61,6 @@ where
 
 impl<W, P, R1, R2, R3> Reporter<W, P> for (R1, R2, R3)
 where
-    W: World,
-    P: Population,
     R1: Reporter<W, P>,
     R2: Reporter<W, P>,
     R3: Reporter<W, P>,
@@ -101,8 +74,6 @@ where
 
 impl<W, P, R1, R2, R3, R4> Reporter<W, P> for (R1, R2, R3, R4)
 where
-    W: World,
-    P: Population,
     R1: Reporter<W, P>,
     R2: Reporter<W, P>,
     R3: Reporter<W, P>,
@@ -116,11 +87,7 @@ where
     }
 }
 
-impl<W, P> Reporter<W, P> for ReporterList<W, P>
-where
-    W: World,
-    P: Population,
-{
+impl<W, P> Reporter<W, P> for ReporterList<W, P> {
     fn process(&mut self, n: usize, world: &W, population: &P) {
         for (i, r) in self.iter_mut() {
             if n % (*i) == 0 {
@@ -134,24 +101,18 @@ where
 // Growable Reporter instances
 /////////////////////////////////////////////////////////////////////////////
 
-impl<W, P> GrowableReporter<W, P> for ReporterList<W, P>
-where
-    W: World,
-    P: Population,
-{
-    fn register_reporter(&mut self, n_steps: usize, reporter: Box<dyn Reporter<W, P>>) {
+impl<W, P> GrowableReporter<W, P> for ReporterList<W, P> {
+    fn register_reporter(&mut self, n_steps: usize, reporter: ReporterFn<W, P>) {
         self.push((n_steps, reporter));
     }
 }
 
 impl<W, P, R1, R2> GrowableReporter<W, P> for (R1, R2)
 where
-    W: World,
-    P: Population,
     R1: Reporter<W, P>,
     R2: GrowableReporter<W, P>,
 {
-    fn register_reporter(&mut self, n_steps: usize, reporter: Box<dyn Reporter<W, P>>) {
+    fn register_reporter(&mut self, n_steps: usize, reporter: ReporterFn<W, P>) {
         self.1.register_reporter(n_steps, reporter);
     }
 }

@@ -1,26 +1,29 @@
 use rand::Rng;
 
-use super::{HasAge, Population, State};
+use super::{HasAge, Population};
 use crate::{
     prelude::{Age, AgeCount10, AgeDistribution10},
     utils::random_ages,
 };
-use std::iter;
 
 /// Creates a new population of n individuals starting with the default state.
 pub fn new_population<P>(n: usize) -> P
 where
     P: Population,
-    P::State: State + Default,
+    P::State: Default,
 {
-    Population::from_states(iter::repeat(P::State::default()).take(n))
+    let mut data = Vec::with_capacity(n);
+    for _ in 0..n {
+        data.push(P::State::default())
+    }
+    Population::from_states(data)
 }
 
 /// Creates a new population with ages.
 pub fn new_population_from_ages<P, R>(counts: AgeCount10, rng: &mut R) -> P
 where
     P: Population,
-    P::State: State + Default + HasAge,
+    P::State: Default + HasAge,
     R: Rng,
 {
     let mut data: Vec<P::State> = vec![];
@@ -36,10 +39,14 @@ where
 }
 
 /// Creates a new population with ages.
-pub fn new_population_from_distribution<P, R>(n: usize, distrib: AgeDistribution10, rng: &mut R) -> P
+pub fn new_population_from_distribution<P, R>(
+    n: usize,
+    distrib: AgeDistribution10,
+    rng: &mut R,
+) -> P
 where
     P: Population,
-    P::State: State + Default + HasAge,
+    P::State: Default + HasAge,
     R: Rng,
 {
     let ages = random_ages(n, rng, distrib);

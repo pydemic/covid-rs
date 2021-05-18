@@ -3,12 +3,14 @@ mod macros;
 
 mod builder;
 mod epicurve_reporter;
+mod simulation;
 mod epicurve_tracker;
 mod manager;
 mod population;
 mod reporter;
 mod state;
 pub use builder::*;
+pub use simulation::*;
 pub use epicurve_reporter::*;
 pub use epicurve_tracker::*;
 pub use manager::*;

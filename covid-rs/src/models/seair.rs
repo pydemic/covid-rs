@@ -1,10 +1,15 @@
 use rand::Rng;
 
-use crate::{epidemic::{EpiModel, Params, SEICHARLike, SEIRLike}, prelude::Real, sim::{State, StochasticUpdate}};
+use crate::{
+    epidemic::{EpiModel, SEICHARLike, SEIRLike},
+    params::UniversalSEIRParams,
+    prelude::Real,
+    sim::RandomUpdate,
+};
 
 /// Enumeration used internally to distinguish Exposed, Infectious and Asymptomatic
 /// in SEAIR.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
 pub enum SEAIR<C> {
     Susceptible,
     Exposed(C),
@@ -36,10 +41,9 @@ impl<C> Default for SEAIR<C> {
     }
 }
 
-impl<C: State> State for SEAIR<C> {}
-
 impl<C: Clone> EpiModel for SEAIR<C> {
     const CARDINALITY: usize = 6;
+    const CSV_HEADER: &'static str = "S,E,A,I,R,D";
     const S: usize = 0;
     const D: usize = 5;
 
@@ -98,15 +102,15 @@ impl<C: Clone> SEICHARLike for SEAIR<C> {
     const A: usize = 2;
 }
 
-impl<C: State> StochasticUpdate<Params> for SEAIR<C> {
-    fn update_random<R: Rng>(&mut self, params: &Params, rng: &mut R) {
-        // FIXME: implement age-independent parameters!
-        let age = 40;
-
+impl<C: Clone, P> RandomUpdate<P> for SEAIR<C>
+where
+    P: UniversalSEIRParams,
+{
+    fn random_update<R: Rng>(&mut self, params: &P, rng: &mut R) {
         match self {
             Self::Exposed(c) => {
                 if rng.gen_bool(params.incubation_transition_prob()) {
-                    if rng.gen_bool(params.prob_asymptomatic(40)) {
+                    if rng.gen_bool(params.prob_asymptomatic()) {
                         *self = Self::Asymptomatic(c.clone())
                     } else {
                         *self = Self::Infectious(c.clone())
@@ -120,7 +124,7 @@ impl<C: State> StochasticUpdate<Params> for SEAIR<C> {
             }
             Self::Infectious(c) => {
                 if rng.gen_bool(params.infectious_transition_prob()) {
-                    if rng.gen_bool(params.case_fatality_ratio(age)) {
+                    if rng.gen_bool(params.case_fatality_ratio()) {
                         *self = Self::Dead(c.clone());
                     } else {
                         *self = Self::Recovered(c.clone());

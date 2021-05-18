@@ -1,6 +1,6 @@
 use rand::Rng;
 
-use crate::prelude::{Age, EpiModel, Params};
+use crate::prelude::{Age, EpiModel};
 use std::fmt::Debug;
 
 /// Minimal bounds on agent States.
@@ -10,7 +10,7 @@ pub trait World: Send + Clone + PartialEq + Debug + Default {} // Sync?
 /// A trait for agents that have an age field. Many epidemiological models are
 /// age-sensitive and it is useful to isolate this property as trait to implement
 /// generic functionality associated with processing ages.
-pub trait HasAge: State {
+pub trait HasAge {
     /// Agent's age.
     fn age(&self) -> Age;
 
@@ -19,27 +19,44 @@ pub trait HasAge: State {
 }
 
 /// A trait for objects that have an compartment field with a SIR value.
-pub trait HasEpiModel: State {
+pub trait HasEpiModel {
     type Model: EpiModel;
 
     /// Return the epidemiological compartment.
-    fn epimodel(&self) -> Self::Model;
+    fn epimodel(&self) -> &Self::Model;
+
+    /// Return the epidemiological compartment.
+    fn epimodel_mut(&mut self) -> &mut Self::Model;
 
     /// Set value of the epidemiological state.
-    fn set_epimodel(&mut self, value: Self::Model) -> &mut Self;
+    fn set_epimodel(&mut self, value: Self::Model) -> &mut Self {
+        let model = self.epimodel_mut();
+        *model = value;
+        return self;
+    }
+
+    /// Apply random_update to the inner stochastic model. This usually is part
+    /// of the implementation of a StochasticUpdate<W> trait for the parent
+    /// model.
+    fn epimodel_random_update<R: Rng, W>(&mut self, params: &W, rng: &mut R)
+    where
+        Self::Model: RandomUpdate<W>,
+    {
+        self.epimodel_mut().random_update(params, rng);
+    }
 }
 
 /// A trait for objects that can be deterministically updated in the given
 /// World.
-pub trait Update<W: World>: State {
-    fn update(&mut self, world: &W);
+pub trait DeterministicUpdate<W> {
+    fn deterministic_update(&mut self, world: &W);
 }
 
 /// A trait for objects that can be stochastically updated in the given
 /// World. Users must pass a random number generator in order to update
 // this object
-pub trait StochasticUpdate<W: World>: State {
-    fn update_random<R: Rng>(&mut self, world: &W, rng: &mut R);
+pub trait RandomUpdate<W> {
+    fn random_update<R: Rng>(&mut self, world: &W, rng: &mut R);
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -48,22 +65,10 @@ pub trait StochasticUpdate<W: World>: State {
 
 impl State for () {}
 
-impl<W: World> Update<W> for () {
-    fn update(&mut self, _world: &W) {}
+impl<W> DeterministicUpdate<W> for () {
+    fn deterministic_update(&mut self, _world: &W) {}
 }
 
-impl<W: World> StochasticUpdate<W> for () {
-    fn update_random<R: Rng>(&mut self, _world: &W, _: &mut R) {}
-}
-
-impl<T> StochasticUpdate<Params> for T
-where
-    T: HasEpiModel,
-    T::Model: StochasticUpdate<Params>,
-{
-    fn update_random<R: Rng>(&mut self, params: &Params, rng: &mut R) {
-        let mut value = self.epimodel();
-        value.update_random(params, rng);
-        self.set_epimodel(value);
-    }
+impl<W> RandomUpdate<W> for () {
+    fn random_update<R: Rng>(&mut self, _world: &W, _: &mut R) {}
 }

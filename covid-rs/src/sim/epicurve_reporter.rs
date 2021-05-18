@@ -1,5 +1,7 @@
-use super::{EpicurveTracker, GrowableReporter, Population, Reporter, ReporterList, World};
-use crate::prelude::{EpiModel};
+use super::{
+    EpicurveTracker, GrowableReporter, Population, Reporter, ReporterFn, ReporterList, World,
+};
+use crate::prelude::EpiModel;
 use std::fmt::Debug;
 
 /// Epicurve reporter that can be extended with an arbitrary list of FnMut()
@@ -34,6 +36,15 @@ impl<W, P, const N: usize> EpicurveReporter<W, P, { N }> {
     pub fn epicurve_tip(&self) -> [usize; N] {
         self.epicurves.tip()
     }
+
+    /// Return a copy of reporter, ignoring the user defined ones
+    pub fn copy(&self) -> Self {
+        EpicurveReporter {
+            n_iter: self.n_iter,
+            epicurves: self.epicurves.clone(),
+            reporters: vec![],
+        }
+    }
 }
 
 impl<W, P, const N: usize> Debug for EpicurveReporter<W, P, { N }> {
@@ -46,7 +57,6 @@ impl<W, P, const N: usize> Debug for EpicurveReporter<W, P, { N }> {
 
 impl<W, P, const N: usize> Reporter<W, P> for EpicurveReporter<W, P, { N }>
 where
-    W: World,
     P: Population,
     P::State: EpiModel,
 {
@@ -63,7 +73,7 @@ where
     P: Population,
     P::State: EpiModel,
 {
-    fn register_reporter(&mut self, n_steps: usize, reporter: Box<dyn Reporter<W, P>>) {
+    fn register_reporter(&mut self, n_steps: usize, reporter: ReporterFn<W, P>) {
         self.reporters.register_reporter(n_steps, reporter)
     }
 }

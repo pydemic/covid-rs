@@ -1,14 +1,15 @@
 use rand::Rng;
 
 use crate::{
-    epidemic::{EpiModel, Params, SEICHARLike, SEIRLike},
+    epidemic::{EpiModel, SEICHARLike, SEIRLike},
+    params::UniversalSEIRParams,
     prelude::Real,
-    sim::{State, StochasticUpdate},
+    sim::RandomUpdate,
 };
 
 /// Enumeration used internally to distinguish Exposed, Infectious, Asymptomatic
 /// Critical and Severe in SEICHAR.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord)]
 pub enum SEICHAR<C> {
     Susceptible,
     Exposed(C),
@@ -38,8 +39,6 @@ impl<C> SEICHAR<C> {
     }
 }
 
-impl<C: State> State for SEICHAR<C> {}
-
 impl<C> Default for SEICHAR<C> {
     fn default() -> Self {
         Self::Susceptible
@@ -48,6 +47,7 @@ impl<C> Default for SEICHAR<C> {
 
 impl<C: Clone> EpiModel for SEICHAR<C> {
     const CARDINALITY: usize = 8;
+    const CSV_HEADER: &'static str = "S,E,I,C,H,A,R,D";
     const S: usize = 0;
     const D: usize = 7;
 
@@ -110,13 +110,15 @@ impl<C: Clone> SEICHARLike for SEICHAR<C> {
     const A: usize = 5;
 }
 
-impl<C: State> StochasticUpdate<Params> for SEICHAR<C> {
-    fn update_random<R: Rng>(&mut self, params: &Params, rng: &mut R) {
-        let age = 40; // TODO
+impl<C: Clone, P> RandomUpdate<P> for SEICHAR<C>
+where
+    P: UniversalSEIRParams,
+{
+    fn random_update<R: Rng>(&mut self, params: &P, rng: &mut R) {
         match self {
             Self::Exposed(c) => {
                 if rng.gen_bool(params.incubation_transition_prob()) {
-                    if rng.gen_bool(params.prob_asymptomatic(age)) {
+                    if rng.gen_bool(params.prob_asymptomatic()) {
                         *self = Self::Asymptomatic(c.clone())
                     } else {
                         *self = Self::Infectious(c.clone())
@@ -130,7 +132,7 @@ impl<C: State> StochasticUpdate<Params> for SEICHAR<C> {
             }
             Self::Infectious(c) => {
                 if rng.gen_bool(params.infectious_transition_prob()) {
-                    if rng.gen_bool(params.prob_severe(age)) {
+                    if rng.gen_bool(params.prob_severe()) {
                         *self = Self::Severe(c.clone())
                     } else {
                         *self = Self::Recovered(c.clone());
@@ -139,7 +141,7 @@ impl<C: State> StochasticUpdate<Params> for SEICHAR<C> {
             }
             Self::Severe(c) => {
                 if rng.gen_bool(params.severe_transition_prob()) {
-                    if rng.gen_bool(params.prob_critical(age)) {
+                    if rng.gen_bool(params.prob_critical()) {
                         *self = Self::Critical(c.clone())
                     } else {
                         *self = Self::Recovered(c.clone());
@@ -148,7 +150,7 @@ impl<C: State> StochasticUpdate<Params> for SEICHAR<C> {
             }
             Self::Critical(c) => {
                 if rng.gen_bool(params.critical_transition_prob()) {
-                    if rng.gen_bool(params.prob_death(age)) {
+                    if rng.gen_bool(params.prob_death()) {
                         *self = Self::Dead(c.clone());
                     } else {
                         *self = Self::Recovered(c.clone());

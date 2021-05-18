@@ -1,10 +1,8 @@
-mod params;
-mod variants;
-mod vaccines;
-mod model;
 mod healthcare;
-pub use self::model::*;
+mod model;
+mod vaccines;
+mod variants;
 pub use self::healthcare::*;
-pub use self::params::*;
-pub use self::variants::*;
+pub use self::model::*;
 pub use self::vaccines::*;
+pub use self::variants::*;

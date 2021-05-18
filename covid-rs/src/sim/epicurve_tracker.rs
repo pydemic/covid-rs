@@ -1,4 +1,4 @@
-use super::{Population, Reporter, State, World};
+use super::{Population, Reporter};
 use crate::prelude::EpiModel;
 use std::{fmt::Display, ops::Add};
 
@@ -9,16 +9,28 @@ pub struct EpicurveTracker<T: From<usize>, const N: usize> {
     data: [Vec<T>; N],
 }
 
-impl<T, const N: usize> EpicurveTracker<T, N>
+impl<T, const N: usize> EpicurveTracker<T, { N }>
 where
     T: From<usize> + Display + Add<Output = T> + Copy + Default,
 {
     pub fn new() -> Self {
+        // Cannot use this code because of dependently sized N
+        // EpicurveTracker {
+        //     size: 0,
+        //     data: unsafe {
+        //         let mut data: [MaybeUninit<Vec<T>>; N] = MaybeUninit::uninit().assume_init();
+        //         for ptr in data.iter_mut() {
+        //             *ptr = MaybeUninit::new(vec![]);
+        //         }
+        //         std::mem::transmute::<_, [Vec<T>; N]>(data)
+        //     },
+        // }
+
         // SAFETY
         // We need to create an array of empty vectors fo arbitrary size. Usually
         // this would be done as [Vec::default(); N], but Rust does not support
         // this with N >= 32, or if the size of N comes from a compilation constant
-        // that is yet unknown. 
+        // that is yet unknown.
         unsafe {
             // For now, we use an deprecated method since MaybeUninit is not
             // usable for variable-size arrays yet.
@@ -26,13 +38,7 @@ where
             for item in data.iter_mut() {
                 std::ptr::write(item, vec![]);
             }
-            // unsafe {
-            //     let mut data: [MaybeUninit<Vec<usize>>; N] = MaybeUninit::uninit().assume_init();
-            //     for ptr in data.iter_mut() {
-            //         *ptr = MaybeUninit::new(vec![]);
-            //     }
-            //     unsafe { std::mem::transmute::<_, [Vec<usize>; N]>(data) }
-            // };
+
             EpicurveTracker {
                 size: 0,
                 data: data,
@@ -125,8 +131,7 @@ where
 
 impl<'a, T, W, P, S, const N: usize> Reporter<W, P> for EpicurveTracker<T, N>
 where
-    W: World,
-    S: EpiModel + State,
+    S: EpiModel,
     P: Population<State = S>,
     T: From<usize> + Display + Add<Output = T> + Copy + Default,
 {
