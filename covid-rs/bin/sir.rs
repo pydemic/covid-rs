@@ -1,4 +1,10 @@
-use covid::{models::*, params::AgeDependentSEIR, prelude::*, sim::*};
+use covid::{
+    models::*,
+    params::{FromUniversalParams, FullSEIRParams, LocalBind, VaccineDependentSEIR},
+    prelude::*,
+    sim::*,
+    utils::default_rng,
+};
 
 pub fn main() {
     // type T = models::SEICHAR<()>;
@@ -8,31 +14,38 @@ pub fn main() {
     SimpleLogger::new().init().unwrap();
 
     let mut pop: Vec<T> = new_population(10000);
-    pop.set_ages(80);
+    let mut rng_ = default_rng();
+    let rng = &mut rng_;
 
-    let params = AgeDependentSEIR::<AgeParam>::default();
+    pop.set_ages(50)
+        .vaccinate_random(true, 0.9, rng)
+        .contaminate_at_random(20, rng);
 
-    // Infect elements
-    pop.set_agents(&[
-        (0, &T::new_infectious()),
-        (1, &T::new_infectious()),
-        (2, &T::new_infectious()),
-        (3, &T::new_infectious()),
-        (4, &T::new_infectious()),
-        (5, &T::new_infectious()),
-        (6, &T::new_infectious()),
-        (7, &T::new_infectious()),
-        (8, &T::new_infectious()),
-        (9, &T::new_infectious()),
-    ]);
-
+    let mut params: VaccineDependentSEIR<AgeParam> = Default::default();
+    // let mut params = AgeDependentSEIR::<AgeParam>::default();
     let mut sim: Simulation<_, _, _, { T::CARDINALITY }> =
-        Simulation::new_simple(params, pop, 4.5, 0.095);
+        Simulation::new_simple(params.clone(), pop, 4.5, 0.095);
 
-    sim.run(180);
+    sim.seed_from(rng);
+    sim.run(30)
+        // .vaccinate_random(true, 0.25, rng)
+        .run(30)
+        // .vaccinate_random(true, 0.25, rng)
+        .run(30)
+        .run(30);
+
     // println!("{:#?}", pop);
     // println!("{:#?}", params);
     println!("{}", sim.render_epicurve_csv(T::CSV_HEADER));
-    println!("params: {:#?}", params);
+    LocalBind::<T>::bind(&mut params, (20, true));
+    println!(
+        "params: {:#?}",
+        FullSEIRParams::<Real>::from_universal_params(&params)
+    );
+    LocalBind::<T>::bind(&mut params, (20, false));
+    println!(
+        "params: {:#?}",
+        FullSEIRParams::<Real>::from_universal_params(&params)
+    );
     // println!("pop: {:#?}", sim.sample(10))
 }

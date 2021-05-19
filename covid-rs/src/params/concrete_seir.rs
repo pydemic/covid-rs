@@ -2,6 +2,7 @@ use super::{
     bound_params::{ForState, MapComponents},
     seir::{daily_probability, SEIRParams, SEIRParamsData},
     universal_seir::UniversalSEIRParams,
+    BoundParams,
 };
 use crate::prelude::{AgeDistribution10, AgeParam, Real};
 use getset::{Getters, Setters};
@@ -24,6 +25,12 @@ const INCUBATION_PERIOD: Real = 3.69;
 const INFECTIOUS_PERIOD: Real = 3.47;
 const SEVERE_PERIOD: Real = 7.19;
 const CRITICAL_PERIOD: Real = 17.50 - 7.19;
+
+/// Trait for types that can be created from a UniversalSEIRParams implementation
+pub trait FromUniversalParams {
+    /// Create new instances from an UniversalSEIRParams implementation
+    fn from_universal_params(params: &impl UniversalSEIRParams) -> Self;
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // Auxiliary macros
@@ -247,6 +254,18 @@ where
     method!(data = critical_period[T], value = 0.0);
 }
 
+impl FromUniversalParams for EpidemicSEIRParams<Real> {
+    fn from_universal_params(params: &impl UniversalSEIRParams) -> Self {
+        Self::new(
+            params.incubation_period(),
+            params.infectious_period(),
+            params.asymptomatic_infectiousness(),
+            params.prob_asymptomatic(),
+            params.case_fatality_ratio(),
+        )
+    }
+}
+
 // ClinicalSEIRParams //////////////////////////////////////////////////////////
 
 /// ClinicalSEIRParams store information about the clinical evolution of cases.
@@ -327,6 +346,17 @@ impl<T: Default> Default for ClinicalSEIRParams<T> {
     }
 }
 
+impl FromUniversalParams for ClinicalSEIRParams<Real> {
+    fn from_universal_params(params: &impl UniversalSEIRParams) -> Self {
+        Self::new(
+            params.severe_period(),
+            params.critical_period(),
+            params.prob_severe(),
+            params.prob_critical(),
+        )
+    }
+}
+
 // FullSEIRParams //////////////////////////////////////////////////////////
 
 /// Compose EpidemicSEIRParams with ClinicalSEIRParams.
@@ -399,6 +429,15 @@ where
     method!(data = infectious_period[T], delegate = epidemic);
     method!(data = severe_period[T], delegate = clinical);
     method!(data = critical_period[T], delegate = clinical);
+}
+
+impl FromUniversalParams for FullSEIRParams<Real> {
+    fn from_universal_params(params: &impl UniversalSEIRParams) -> Self {
+        Self::new(
+            FromUniversalParams::from_universal_params(params),
+            FromUniversalParams::from_universal_params(params),
+        )
+    }
 }
 
 // CachedSEIRParams ////////////////////////////////////////////////////////////
@@ -510,6 +549,16 @@ where
             critical_transition_prob,
         }
     );
+}
+
+impl<P> FromUniversalParams for CachedSEIRParams<P, Real>
+where
+    P: FromUniversalParams + SEIRParamsData<Real>,
+{
+    fn from_universal_params(params: &impl UniversalSEIRParams) -> Self {
+        let src: P = FromUniversalParams::from_universal_params(params);
+        Self::new(src)
+    }
 }
 
 macro_rules! register_defaults {

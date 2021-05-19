@@ -32,9 +32,19 @@ impl<W, P, const N: usize> EpicurveReporter<W, P, { N }> {
         self.epicurves.render_csv(head, ',')
     }
 
-    /// Return an arrray with the last row of the Epicurve.
-    pub fn epicurve_tip(&self) -> [usize; N] {
+    /// Return an array with the last row of epicurves.
+    pub fn tip(&self) -> [usize; N] {
         self.epicurves.tip()
+    }
+
+    /// Return the i-th row of epicurves.
+    pub fn row(&self, i: usize) -> Option<[usize; N]> {
+        self.epicurves.row(i)
+    }
+
+    /// Return the i-th epicurve.
+    pub fn col(&self, i: usize) ->  Option<&[usize]>  {
+        self.epicurves.col(i)
     }
 
     /// Return a copy of reporter, ignoring the user defined ones

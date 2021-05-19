@@ -1,48 +1,6 @@
-use super::{Agent, Id, RandomUpdate, DeterministicUpdate, World};
-use crate::prelude::{EpiModel, SEICHARLike, SEIRLike};
-use paste::paste;
-use rand::prelude::{Rng, SliceRandom};
+use super::{Agent, DeterministicUpdate, Id, RandomUpdate, World};
+use rand::prelude::Rng;
 use std::collections::HashSet;
-
-#[macro_export]
-macro_rules! compartment_methods {
-    ($id:ident, for=$typ:ty) => {
-        paste! {
-            fn [<each_ $id>](&self, f: impl FnMut(Id, &Self::State))
-            where
-                Self::State: $typ,
-            {
-                let mut g = f;
-                self.each_agent(&mut |id, st: &Self::State| {
-                    if st.[<is_ $id>]() {
-                        g(id, st)
-                    }
-                })
-            }
-
-            fn [<each_ $id _mut>](&mut self, f: impl FnMut(Id, &mut Self::State))
-            where
-                Self::State: $typ,
-            {
-                let mut g = f;
-                self.each_agent_mut(&mut |id, st: &mut Self::State| {
-                    if st.[<is_ $id>]() {
-                        g(id, st)
-                    }
-                })
-            }
-
-            fn [<n_ $id>](&self) -> usize
-            where
-                Self::State: $typ,
-            {
-                let mut n = 0;
-                self.each_agent(&mut |_, _| n += 1);
-                return n;
-            }
-        }
-    };
-}
 
 /// The population trait describes a collection of agents.
 pub trait Population {
@@ -66,6 +24,9 @@ pub trait Population {
 
     /// Get an agent by id.
     fn get_agent(&self, id: Id) -> Option<&Self::State>;
+
+    /// Get mutable reference to agent by id.
+    fn get_agent_mut(&mut self, id: Id) -> Option<&mut Self::State>;
 
     /// Get a pair of agents by id.
     fn get_pair(&self, i: Id, j: Id) -> Option<(&Self::State, &Self::State)> {
@@ -91,13 +52,21 @@ pub trait Population {
     /// Set an agent state by id.
     fn set_agent(&mut self, id: Id, state: &Self::State) -> &mut Self
     where
-        Self::State: Clone;
-
-    /// Map function to agent, mutating it.
-    fn map_agent_mut<B>(&mut self, id: Id, f: impl FnOnce(&mut Self::State) -> B) -> Option<B>;
+        Self::State: Clone,
+    {
+        self.get_agent_mut(id).map(|st| *st = state.clone());
+        return self;
+    }
 
     /// Map function to agent.
-    fn map_agent<B>(&self, id: Id, f: impl FnOnce(&Self::State) -> B) -> Option<B>;
+    fn map_agent<B>(&self, id: Id, f: impl FnOnce(&Self::State) -> B) -> Option<B> {
+        self.get_agent(id).map(f)
+    }
+
+    /// Map function to agent, mutating it.
+    fn map_agent_mut<B>(&mut self, id: Id, f: impl FnOnce(&mut Self::State) -> B) -> Option<B> {
+        self.get_agent_mut(id).map(f)
+    }
 
     /// Set multiple agent states by ids. If you need to update multiple
     /// agents, it can be more convenient to use this.
@@ -121,41 +90,83 @@ pub trait Population {
     /// and mutable reference to State.
     fn each_agent_mut(&mut self, f: impl FnMut(Id, &mut Self::State));
 
+    /// Select a random id using random number generator.
+    fn random_id<R: Rng>(&self, rng: &mut R) -> Id {
+        rng.gen_range(0..self.count())
+    }
+
     /// Select a random agent using random number generator.
-    fn random<R: Rng>(&self, rng: &mut R) -> (Id, Self::State)
+    fn random<R: Rng>(&self, rng: &mut R) -> (Id, &Self::State)
     where
-        Self::State: Clone;
+        Self::State: Clone,
+    {
+        let i = self.random_id(rng);
+        let ag = self.get_agent(i).unwrap();
+        return (i, ag);
+    }
+
+    /// Select a random agent using random number generator.
+    fn random_mut<R: Rng>(&mut self, rng: &mut R) -> (Id, &mut Self::State)
+    where
+        Self::State: Clone,
+    {
+        let i = self.random_id(rng);
+        let ag = self.get_agent_mut(i).unwrap();
+        return (i, ag);
+    }
 
     /// Select many distinct random agents.
     fn randoms<R: Rng>(&self, count: usize, rng: &mut R) -> Vec<(Id, Self::State)>
     where
         Self::State: Clone,
     {
-        self.randoms_with(count, rng, |st| st.clone())
-    }
-
-    /// Select many distinct random agents.
-    fn randoms_with<T, R, F>(&self, count: usize, rng: &mut R, f: F) -> Vec<(Id, T)>
-    where
-        R: Rng,
-        F: Fn(&Self::State) -> T,
-        Self::State: Clone,
-    {
-        let mut ids = HashSet::new();
         let mut out = Vec::new();
-
-        while out.len() < count {
-            let (id, state) = self.random(rng);
-            if !ids.contains(&id) {
-                ids.insert(id);
-                out.push((id, f(&state)));
-            }
-        }
-
+        self.map_randoms(count, rng, |i, st| out.push((i, st.clone())));
         return out;
     }
 
-    fn update_random<W, R>(&mut self, world: &W, rng: &mut R)
+    /// Select many distinct random agents.
+    fn map_randoms<R, F>(&self, count: usize, rng: &mut R, f: F)
+    where
+        R: Rng,
+        F: FnMut(usize, &Self::State),
+        Self::State: Clone,
+    {
+        let mut ids = HashSet::new();
+        let mut missing = count;
+        let mut g = f;
+        while missing > 0 {
+            let (id, state) = self.random(rng);
+            if !ids.contains(&id) {
+                ids.insert(id);
+                g(id, &state);
+                missing -= 1;
+            }
+        }
+    }
+
+    /// A mutable version of randoms_with
+    fn map_randoms_mut<R, F>(&mut self, count: usize, rng: &mut R, f: F)
+    where
+        R: Rng,
+        F: FnMut(usize, &mut Self::State),
+        Self::State: Clone,
+    {
+        let mut ids = HashSet::new();
+        let mut missing = count;
+        let mut g = f;
+        while missing > 0 {
+            let (id, state) = self.random_mut(rng);
+            if !ids.contains(&id) {
+                ids.insert(id);
+                g(id, state);
+                missing -= 1;
+            }
+        }
+    }
+
+    /// Apply random_update to each element of population
+    fn random_update<W, R>(&mut self, world: &W, rng: &mut R)
     where
         R: Rng,
         W: World,
@@ -164,157 +175,13 @@ pub trait Population {
         self.each_agent_mut(&mut |_, st: &mut Self::State| st.random_update(world, rng));
     }
 
-    fn update<W>(&mut self, world: &W)
+    /// Apply deterministic_update to each element of population
+    fn deterministic_update<W>(&mut self, world: &W)
     where
         W: World,
         <Self as Population>::State: DeterministicUpdate<W>,
     {
         self.each_agent_mut(|_, st: &mut Self::State| st.deterministic_update(world));
-    }
-
-    fn contaminate_at_random(
-        &mut self,
-        n: usize,
-        rng: &mut impl Rng,
-        f: impl Fn(usize, &mut Self::State) -> bool,
-    ) -> usize
-    where
-        Self::State: EpiModel,
-    {
-        let from_list = |n, rng, pop: &mut Self| {
-            let mut susceptibles = vec![];
-            pop.each_agent(&mut |id, st| {
-                if st.is_susceptible() {
-                    susceptibles.push(id);
-                }
-            });
-            (susceptibles.len() > n).then(|| susceptibles.shuffle(rng));
-
-            let mut size = susceptibles.len().min(n);
-            for (_, id) in (0..size).into_iter().zip(susceptibles) {
-                pop.map_agent_mut(id, |st| {
-                    if f(id, st) {
-                        size -= 1;
-                    }
-                });
-            }
-            return size;
-        };
-
-        let mut cases = 0;
-        let mut tries = 0;
-
-        while cases < n {
-            let (id, _) = self.random(rng);
-            self.map_agent_mut(id, |st| {
-                if st.is_susceptible() && f(id, st) {
-                    cases += 1;
-                }
-            });
-
-            tries += 1;
-            if tries >= 3 * n && tries > 15 {
-                return cases + from_list(n - cases, rng, self);
-            }
-        }
-        return n;
-    }
-
-    // Methods for SIR-based populations //////////////////////////////////////
-    compartment_methods!(susceptible, for=EpiModel);
-    compartment_methods!(dead, for=EpiModel);
-    compartment_methods!(contagious, for=SEIRLike);
-    compartment_methods!(infectious, for=SEIRLike);
-    compartment_methods!(recovered, for=SEIRLike);
-    compartment_methods!(exposed, for=SEIRLike);
-    compartment_methods!(asymptomatic, for=SEICHARLike);
-    compartment_methods!(severe, for=SEICHARLike);
-    compartment_methods!(critical, for=SEICHARLike);
-
-    fn count_sir(&self) -> [usize; 4]
-    where
-        Self::State: SEIRLike,
-    {
-        let (mut s, mut i, mut r, mut n) = (0, 0, 0, 0);
-        self.each_agent(&mut |_, st: &Self::State| {
-            if st.is_susceptible() {
-                s += 1;
-            } else if st.is_infectious() {
-                i += 1;
-            } else if st.is_recovered() {
-                r += 1;
-            }
-            n += 1;
-        });
-        return [s, i, r, n];
-    }
-
-    fn count_seir(&self) -> [usize; 5]
-    where
-        Self::State: SEIRLike,
-    {
-        let (mut s, mut e, mut i, mut r, mut n) = (0, 0, 0, 0, 0);
-        self.each_agent(&mut |_, st: &Self::State| {
-            if st.is_susceptible() {
-                s += 1;
-            } else if st.is_exposed() {
-                e += 1;
-            } else if st.is_infectious() {
-                i += 1;
-            } else if st.is_recovered() {
-                r += 1;
-            }
-            n += 1;
-        });
-        return [s, e, i, r, n];
-    }
-
-    fn count_seair(&self) -> [usize; 6]
-    where
-        Self::State: SEICHARLike,
-    {
-        let (mut s, mut e, mut a, mut i, mut r, mut n) = (0, 0, 0, 0, 0, 0);
-        self.each_agent(&mut |_, st: &Self::State| {
-            if st.is_susceptible() {
-                s += 1;
-            } else if st.is_exposed() {
-                e += 1;
-            } else if st.is_asymptomatic() {
-                a += 1;
-            } else if st.is_infectious() {
-                i += 1;
-            } else if st.is_recovered() {
-                r += 1;
-            }
-            n += 1;
-        });
-        return [s, e, a, i, r, n];
-    }
-
-    fn count_seichar(&self) -> [usize; 8]
-    where
-        Self::State: SEICHARLike,
-    {
-        let (mut s, mut e, mut i, mut c, mut h, mut a, mut r, mut n) = (0, 0, 0, 0, 0, 0, 0, 0);
-        self.each_agent(&mut |_, st: &Self::State| {
-            if st.is_susceptible() {
-                s += 1;
-            } else if st.is_exposed() {
-                e += 1;
-            } else if st.is_infectious() {
-                i += 1;
-            } else if st.is_critical() {
-                c += 1;
-            } else if st.is_severe() {
-                h += 1;
-            } else if st.is_asymptomatic() {
-                a += 1;
-            } else if st.is_recovered() {
-                r += 1;
-            }
-            n += 1;
-        });
-        return [s, e, a, i, c, h, r, n];
     }
 }
 
@@ -323,14 +190,18 @@ pub trait Population {
 /// It automatically provides Population implementations for instances of this
 /// trait.
 pub trait OwnsStateSlice {
-    type State;
+    type Elem;
 
+    /// Construct data from iterator.
     fn owned_data_from_states<I>(states: I) -> Self
     where
-        I: IntoIterator<Item = Self::State>;
+        I: IntoIterator<Item = Self::Elem>;
 
-    fn as_state_slice(&self) -> &[Self::State];
-    fn as_state_mut_slice(&mut self) -> &mut [Self::State];
+    /// Return an immutable slice of agents
+    fn as_state_slice(&self) -> &[Self::Elem];
+
+    /// Return a mutable slice of agents
+    fn as_state_mut_slice(&mut self) -> &mut [Self::Elem];
 }
 
 /// Simple trait for implementations that store states in a Vec of Agent<S>.
@@ -381,7 +252,7 @@ impl<P> Population for P
 where
     P: OwnsStateSlice,
 {
-    type State = P::State;
+    type State = P::Elem;
 
     fn from_states<I>(states: I) -> Self
     where
@@ -398,22 +269,8 @@ where
         self.as_state_slice().get(id)
     }
 
-    fn set_agent(&mut self, id: Id, state: &Self::State) -> &mut Self
-    where
-        Self::State: Clone,
-    {
-        self.as_state_mut_slice()
-            .get_mut(id)
-            .map(|st| *st = state.clone());
-        return self;
-    }
-
-    fn map_agent_mut<B>(&mut self, id: Id, f: impl FnOnce(&mut Self::State) -> B) -> Option<B> {
-        self.as_state_mut_slice().get_mut(id).map(f)
-    }
-
-    fn map_agent<B>(&self, id: Id, f: impl FnOnce(&Self::State) -> B) -> Option<B> {
-        self.as_state_slice().get(id).map(f)
+    fn get_agent_mut(&mut self, id: Id) -> Option<&mut Self::State> {
+        self.as_state_mut_slice().get_mut(id)
     }
 
     fn each_agent<F>(&self, f: &mut F)
@@ -430,34 +287,6 @@ where
         for (id, st) in self.as_state_mut_slice().iter_mut().enumerate() {
             g(id, st);
         }
-    }
-
-    fn random<R: Rng>(&self, rng: &mut R) -> (Id, Self::State)
-    where
-        Self::State: Clone,
-    {
-        let id = rng.gen_range(0..self.count());
-        (id, self.as_state_slice()[id].clone())
-    }
-
-    fn randoms_with<T, R, F>(&self, count: usize, rng: &mut R, f: F) -> Vec<(Id, T)>
-    where
-        R: Rng,
-        F: Fn(&Self::State) -> T,
-    {
-        let mut ids = HashSet::new();
-        let mut out = Vec::new();
-
-        while out.len() < count {
-            let id = rng.gen_range(0..self.count());
-            let state = &self.as_state_slice()[id];
-            if !ids.contains(&id) {
-                ids.insert(id);
-                out.push((id, f(state)));
-            }
-        }
-
-        return out;
     }
 
     fn get_pair_mut(&mut self, i: Id, j: Id) -> Option<(&mut Self::State, &mut Self::State)> {
@@ -478,11 +307,11 @@ where
 }
 
 impl<S> OwnsStateSlice for Vec<S> {
-    type State = S;
+    type Elem = S;
 
     fn owned_data_from_states<I>(states: I) -> Self
     where
-        I: IntoIterator<Item = Self::State>,
+        I: IntoIterator<Item = Self::Elem>,
     {
         states.into_iter().collect()
     }
@@ -495,128 +324,3 @@ impl<S> OwnsStateSlice for Vec<S> {
         self.as_mut_slice()
     }
 }
-
-/*
-impl<S> OwnsContigousAgentSlice for Vec<Agent<S>> {
-    type State = S;
-
-    fn as_agent_slice(&self) -> &[Agent<S>] {
-        self.as_slice()
-    }
-
-    fn as_agent_mut_slice(&mut self) -> &mut [Agent<S>] {
-        self.as_mut_slice()
-    }
-}
-
-impl<'a, S> GrowablePopulation for Vec<Agent<S>> {
-    fn spawn(&mut self, state: S) -> Id {
-        let id = self.len();
-        self.push(Agent { id, state });
-        return id;
-    }
-}
-
-
-impl<S> Population for Vec<Agent<S>> {
-    type State = S;
-
-    fn from_states<I>(states: I) -> Self
-    where
-        I: IntoIterator<Item = Self::State>,
-    {
-        states
-            .into_iter()
-            .enumerate()
-            .map(|(id, state)| Agent { id, state })
-            .collect()
-    }
-
-    fn count(&self) -> usize {
-        self.len()
-    }
-
-    fn get_agent(&self, id: Id) -> Option<&Self::State> {
-        self.get(id).map(|ag| &ag.state)
-    }
-
-    fn set_agent(&mut self, id: Id, state: &Self::State) -> &mut Self
-    where
-        Self::State: Clone,
-    {
-        self.get_mut(id).map(|a| a.state = state.clone());
-        return self;
-    }
-
-    fn map_agent_mut<B>(&mut self, id: Id, f: impl FnOnce(&mut Self::State) -> B) -> Option<B> {
-        self.get_mut(id)
-            .map(|ag: &mut Agent<Self::State>| f(&mut ag.state))
-    }
-
-    fn map_agent<B>(&self, id: Id, f: impl FnOnce(&Self::State) -> B) -> Option<B> {
-        self.get(id).map(|ag: &Agent<Self::State>| f(&ag.state))
-    }
-
-    fn each_agent<F>(&self, f: &mut F)
-    where
-        F: FnMut(Id, &Self::State),
-    {
-        for Agent { id, state } in self.iter() {
-            let id = *id;
-            f(id, state);
-        }
-    }
-
-    fn each_agent_mut(&mut self, f: impl FnMut(Id, &mut Self::State)) {
-        let mut g = f;
-        for Agent { id, state } in self.iter_mut() {
-            let id = *id;
-            g(id, state);
-        }
-    }
-
-    fn random<R: Rng>(&self, rng: &mut R) -> (Id, Self::State)
-    where
-        Self::State: Clone,
-    {
-        let ag = &self[rng.gen_range(0..self.len())];
-        (ag.id, ag.state.clone())
-    }
-
-    fn randoms_with<T, R, F>(&self, count: usize, rng: &mut R, f: F) -> Vec<(Id, T)>
-    where
-        R: Rng,
-        F: Fn(&Self::State) -> T,
-    {
-        let mut ids = HashSet::new();
-        let mut out = Vec::new();
-
-        while out.len() < count {
-            let id = rng.gen_range(0..self.len());
-            let state = &self[id].state;
-            if !ids.contains(&id) {
-                ids.insert(id);
-                out.push((id, f(state)));
-            }
-        }
-
-        return out;
-    }
-
-    fn get_pair_mut(&mut self, i: Id, j: Id) -> Option<(&mut Self::State, &mut Self::State)> {
-        let slice = self.as_mut_slice();
-        let n = slice.len();
-        if i == j || i >= n || j >= n {
-            return None;
-        } else {
-            // Safety: we can have two mutable borrows to elements of the slice
-            // since the previous line guarantees that elements are not the same
-            unsafe {
-                let a: &mut Agent<Self::State> = &mut *(slice.get_unchecked_mut(i) as *mut _);
-                let b: &mut Agent<Self::State> = &mut *(slice.get_unchecked_mut(j) as *mut _);
-                return Some((&mut a.state, &mut b.state));
-            }
-        }
-    }
-}
-*/

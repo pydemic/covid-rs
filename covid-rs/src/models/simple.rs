@@ -3,9 +3,8 @@ use rand::Rng;
 
 use crate::{
     epidemic::EpiModel,
-    prelude::{Age, AgeDistribution10, Real, Time},
+    prelude::{Age, Real, Time},
     sim::{HasAge, HasEpiModel, Population, RandomUpdate},
-    utils::random_ages,
 };
 
 /// A simple agent with an age, epidemic model and vaccine model.
@@ -20,6 +19,14 @@ pub struct SimpleAgent<M, V> {
     vaccine: V,
     #[getset(get_copy = "pub")]
     vaccine_t: Time,
+}
+
+impl<M, V: Clone> SimpleAgent<M, V> {
+    /// Vaccinate agent with vaccine
+    pub fn vaccinate(&mut self, vaccine: &V) {
+        self.vaccine = vaccine.clone();
+        self.vaccine_t = 0;
+    }
 }
 
 impl<M, V> HasAge for SimpleAgent<M, V> {
@@ -67,59 +74,74 @@ where
 ///////////////////////////////////////////////////////////////////////////////
 pub trait SimpleAgentPopulationExt<M, V>: Population<State = SimpleAgent<M, V>>
 where
-    M: Clone,
     V: Clone,
 {
-    /// Set age of all agents to the given value
-    fn set_ages(&mut self, value: Age) -> &mut Self {
-        self.each_agent_mut(|_, ag| ag.age = value);
-        return self;
-    }
-
-    /// Rewrite age of all agents according to the given age distribution.
-    fn distrib_ages<R: Rng>(&mut self, distrib: AgeDistribution10, rng: &mut R) -> &mut Self {
-        let ages = random_ages(self.count(), rng, distrib);
-        let mut i = 0;
-        self.each_agent_mut(move |_, ag| {
-            ag.age = ages[i];
-            i += 1;
-        });
-
-        return self;
-    }
-
     /// Set vaccines to the given value
     fn set_vaccines(&mut self, value: V) -> &mut Self {
-        self.each_agent_mut(|_, ag| ag.vaccine = value.clone());
+        self.each_agent_mut(|_, ag| ag.vaccinate(&value));
         return self;
     }
 
+    /// Vaccinate all individuals that pass predicate.
+    fn vaccinate_if(&mut self, value: V, f: impl FnMut(&mut Self::State) -> bool) -> &mut Self
+    where
+        Self::State: HasAge,
+    {
+        let mut pred = f;
+        self.each_agent_mut(|_, ag| {
+            if pred(ag) {
+                ag.vaccinate(&value)
+            }
+        });
+        return self;
+    }
     /// Vaccinate all individuals with the given vaccine and uniform
     /// probability
     fn vaccinate_random<R: Rng>(&mut self, value: V, prob: Real, rng: &mut R) -> &mut Self {
-        self.each_agent_mut(|_, ag| {
-            if rng.gen_bool(prob) {
-                ag.vaccine = value.clone()
-            }
-        });
-        return self;
+        self.vaccinate_if(value, |ag| rng.gen_bool(prob))
     }
 
     /// Vaccinate all individuals older than the given age.
-    fn vaccinate_elderly<R: Rng>(&mut self, value: V, prob: Real, rng: &mut R) -> &mut Self {
-        self.each_agent_mut(|_, ag| {
-            if rng.gen_bool(prob) {
-                ag.vaccine = value.clone()
-            }
-        });
-        return self;
+    fn vaccinate_elderly_random(
+        &mut self,
+        value: V,
+        age: Age,
+        prob: Real,
+        rng: &mut impl Rng,
+    ) -> &mut Self
+    where
+        Self::State: HasAge,
+    {
+        self.vaccinate_if(value, |ag| ag.age() >= age && rng.gen_bool(prob))
+    }
+
+    /// Vaccinate all individuals older than the given age.
+    fn vaccinate_elderly(&mut self, value: V, age: Age) -> &mut Self
+    where
+        Self::State: HasAge,
+    {
+        self.vaccinate_if(value, |ag| ag.age() >= age)
+    }
+
+    /// Vaccinate all individuals that pass predicate.
+    fn vaccinate_random_if(
+        &mut self,
+        value: V,
+        prob: Real,
+        rng: &mut impl Rng,
+        f: impl FnMut(&mut Self::State) -> bool,
+    ) -> &mut Self
+    where
+        Self::State: HasAge,
+    {
+        let mut pred = f;
+        self.vaccinate_if(value, |ag| pred(ag) && rng.gen_bool(prob))
     }
 }
 
 impl<P, M, V> SimpleAgentPopulationExt<M, V> for P
 where
     P: Population<State = SimpleAgent<M, V>>,
-    M: Clone,
     V: Clone,
 {
 }

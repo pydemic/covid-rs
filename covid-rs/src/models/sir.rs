@@ -53,6 +53,10 @@ impl<C: Clone> EpiModel for SIR<C> {
         }
     }
 
+    fn is_recovered(&self) -> bool {
+        self.index() == Self::R
+    }
+
     fn new_infectious_with(clinical: &Self::Clinical) -> Self {
         Self::Infectious(clinical.clone())
     }

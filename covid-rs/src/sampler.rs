@@ -224,13 +224,14 @@ where
     fn sample_infection_pairs(&self, pop: &P, rng: &mut impl Rng) -> Vec<(usize, usize)> {
         let mut pairs = Vec::new();
         pop.each_agent(&mut |i, st| {
-            if st.is_contagious() {
+            let odds = st.contagion_odds();
+            if odds > 0.0 {
                 let u = self.bin_for_age(st.age());
                 for v in 0..self.n_bins() {
                     let mut m = round_probabilistically(self.contact_matrix[(u, v)], rng);
                     let group = &self.bin_map[v];
                     while m > 0 {
-                        if rng.gen_bool(self.prob_infection) {
+                        if rng.gen_bool((self.prob_infection * odds).min(1.0)) {
                             let j = group[rng.gen_range(0..group.len())];
                             if i == j {
                                 continue;

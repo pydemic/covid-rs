@@ -73,6 +73,10 @@ impl<C: Clone> EpiModel for SEAIR<C> {
         }
     }
 
+    fn is_recovered(&self) -> bool {
+        self.index() == Self::R
+    }
+
     fn transfer_contamination_from(&mut self, other: &Self) -> bool {
         other.clinical().map(|c| *self = Self::Exposed(c)).is_some()
     }

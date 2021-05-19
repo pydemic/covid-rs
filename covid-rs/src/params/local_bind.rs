@@ -27,6 +27,17 @@ pub trait LocalBind<S> {
     /// Bind parameters to value
     fn bind(&mut self, bind: Self::Bind);
 
+    /// Return a copy bound to the given bind state
+    fn local_clone(&self, bind: Self::Bind) -> Self::Local
+    where
+        Self::Local: Clone,
+        Self: Clone,
+    {
+        let mut new = self.clone();
+        new.bind(bind);
+        return new.local().clone();
+    }
+
     /// Return local parameters for current bind
     fn local(&self) -> &Self::Local;
 
@@ -38,6 +49,18 @@ pub trait LocalBind<S> {
 
     /// Just a convenience function that extract bind data and then binds
     fn bind_to_object(&mut self, _: &S);
+
+    /// Return a copy bound to the given bind state
+    fn clone_to_object(&self, obj: &S) -> Self::Local
+    where
+        Self::Local: Clone,
+        Self: Clone,
+    {
+        let mut new = self.clone();
+        new.bind_to_object(obj);
+        return new.local().clone();
+    }
+
 }
 
 impl<S> LocalBind<S> for SEIRUniversalParamSet {
@@ -128,7 +151,10 @@ pub struct SimpleVaccineBound<P> {
     vaccine: bool,
 }
 
-impl<D> LocalBind<SimpleAgent<(), bool>> for SimpleVaccineBound<SEIRParamSet<D>>
+/// A type alias for vaccine-dependent models
+pub type VaccineDependentSEIR<T> = SimpleVaccineBound<SEIRParamSet<T>>;
+
+impl<M, D> LocalBind<SimpleAgent<M, bool>> for VaccineDependentSEIR<D>
 where
     D: MapComponents<Elem = Real>,
 {
@@ -153,7 +179,7 @@ where
         &mut self.params
     }
 
-    fn bind_to_object(&mut self, obj: &SimpleAgent<(), bool>) {
+    fn bind_to_object(&mut self, obj: &SimpleAgent<M, bool>) {
         let age = obj.age();
         let vaccine = obj.vaccine().clone();
         let bind = (age, vaccine);

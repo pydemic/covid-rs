@@ -19,93 +19,7 @@ pub struct PopBuilder<P: Population> {
     rng: SmallRng,
 }
 
-impl<P: Population + Clone> PopBuilder<P> {
-    pub fn new(n: usize) -> Self {
-        PopBuilder {
-            data: P::from_states((0..n).map(|_| P::State::default())),
-            prob_voc: 0.5,
-            rng: SmallRng::from_entropy(),
-        }
-    }
-
-    /// Helper function that creates an agent. It does not add agent to
-    /// population.
-    fn new_agent(&self) -> P::State {
-        P::State::default()
-    }
-
-    /// Seed the population builder RNG with a predictable value
-    pub fn seed(&mut self, seed: u64) -> &mut Self {
-        self.rng = SmallRng::seed_from_u64(seed);
-        return self;
-    }
-
-    /// Return a copy of internal agents buffer.
-    pub fn agents(&self) -> Vec<P::State> {
-        return self.data.to_states();
-    }
-
-    /// Assign random ages to agents from distribution
-    pub fn age_counts(&mut self, counts: AgeCount10) -> &mut Self
-    where
-        P::State: HasAge,
-    {
-        let mut data = vec![];
-        for (i, &n) in counts.iter().enumerate() {
-            for _ in 0..n {
-                let mut st = self.new_agent();
-                let start = i * 10;
-                st.set_age(self.rng.gen_range(start..start + 10) as Age);
-                data.push(st);
-            }
-        }
-        self.data = P::from_states(data);
-        return self;
-    }
-}
 impl PopBuilder<Pop> {
-    /// Register sampler to build simulation
-    pub fn build<S: Sampler<Pop>>(&self, sampler: S) -> Simulation<S> {
-        let sim = Simulation::new(self.data.clone().into(), sampler);
-        sim.rng.replace(self.rng.clone());
-        return sim;
-    }
-
-    /// Register sampler to build simulation
-    pub fn build_simple(
-        &self,
-        n_contacts: Real,
-        prob_infection: Real,
-    ) -> Simulation<SimpleSampler> {
-        self.build(SimpleSampler::new(n_contacts, prob_infection))
-    }
-
-    /// Add a clone of a single agent to builder.
-    pub fn push_agent(&mut self, agent: &Ag) -> &mut Self {
-        self.data.push(agent);
-        return self;
-    }
-
-    /// Add a copy of agents to list
-    pub fn push_agents<I>(&mut self, agents: I) -> &mut Self
-    where
-        I: Iterator<Item = Ag>,
-    {
-        for agent in agents {
-            self.data.push(&agent);
-        }
-        return self;
-    }
-
-    /// Contaminate n individuals at random with some variant
-    pub fn contaminate_at_random(&mut self, n: usize, infect: Infect) -> &mut Self {
-        for i in self.data.sample_agents(n, &mut self.rng) {
-            let variant = Variant::random(&mut self.rng, self.prob_voc);
-            self.data[i].contaminate(variant, infect);
-        }
-        return self;
-    }
-
     /// Infect individuals from epicurve. It receives a mutable Stats object
     /// used to trace statistics from infection probability at each iteration.
     pub fn contaminate_from_epicurve(
@@ -123,26 +37,7 @@ impl PopBuilder<Pop> {
     }
 }
 
-/// ## Modify population
-///
-/// Methods in this section modify population inplace after it is created
-/// either setting a size in the constructor or by pushing agents using other
-/// methods.
-impl<P: Population> PopBuilder<P> {
-    /// Assign random ages to agents from distribution
-    pub fn age_distribution(&mut self, probs: AgeDistrib10) -> &mut Self
-    where
-        P::State: HasAge,
-    {
-        let mut ages = random_ages(self.data.count(), &mut self.rng, probs);
-        self.data.each_agent_mut(|i, st: &mut P::State| {
-            if let Some(age) = ages.pop() {
-                st.set_age(age);
-            }
-        });
-        return self;
-    }
-}
+
 
 #[derive(Debug, Clone)]
 struct EpicurveBuilder<P, S> {

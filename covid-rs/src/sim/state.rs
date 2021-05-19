@@ -1,7 +1,12 @@
 use rand::Rng;
 
-use crate::prelude::{Age, EpiModel};
+use crate::{
+    prelude::{Age, AgeDistribution10, EpiModel},
+    utils::random_ages,
+};
 use std::fmt::Debug;
+
+use super::Population;
 
 /// Minimal bounds on agent States.
 pub trait State: Send + Clone + PartialEq + Debug + Default {} // Sync?
@@ -16,6 +21,38 @@ pub trait HasAge {
 
     /// Set age with given value.
     fn set_age(&mut self, value: Age) -> &mut Self;
+}
+
+pub trait HasAgePopulationExt: Population
+where
+    Self::State: HasAge,
+{
+    /// Set age of all agents to the given value
+    fn set_ages(&mut self, value: Age) -> &mut Self {
+        self.each_agent_mut(|_, ag| {
+            ag.set_age(value);
+        });
+        return self;
+    }
+
+    /// Rewrite age of all agents according to the given age distribution.
+    fn distrib_ages<R: Rng>(&mut self, distrib: AgeDistribution10, rng: &mut R) -> &mut Self {
+        let ages = random_ages(self.count(), rng, distrib);
+        let mut i = 0;
+        self.each_agent_mut(move |_, ag| {
+            ag.set_age(ages[i]);
+            i += 1;
+        });
+
+        return self;
+    }
+}
+
+impl<P> HasAgePopulationExt for P
+where
+    P: Population,
+    P::State: HasAge,
+{
 }
 
 /// A trait for objects that have an compartment field with a SIR value.
