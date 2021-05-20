@@ -2,7 +2,13 @@ use crate::prelude::{Real, INF, NAN};
 use getset::*;
 use serde::{Deserialize, Serialize};
 
-pub trait Stats {
+/// A trait for some data structure that holds statistics about an scalar
+/// variable.
+///
+/// Scalar is easily applicable to a vector of Reals, but also admit other
+/// representations that avoid storing the entire dataset in memory if that is
+/// not necessary.
+pub trait Sampling {
     fn add(&mut self, x: Real);
     fn add_many<I>(&mut self, xs: I)
     where
@@ -12,7 +18,7 @@ pub trait Stats {
             self.add(x);
         }
     }
-    fn size(&self) -> usize;
+    fn sample_size(&self) -> usize;
     fn total(&self) -> Real;
     fn min(&self) -> Real;
     fn max(&self) -> Real;
@@ -23,89 +29,68 @@ pub trait Stats {
         self.var().sqrt()
     }
     fn mean(&self) -> Real {
-        self.total() / self.size() as Real
+        self.total() / self.sample_size() as Real
     }
-    fn last(&self) -> Real;
-    fn stats(&self) -> PointStats {
-        PointStats {
+    fn last_sample(&self) -> Real;
+    fn stats(&self) -> Stats {
+        Stats {
             mean: self.mean(),
             std: self.std(),
             skew: self.skew(),
             kurt: self.kurt(),
             min: self.min(),
             max: self.max(),
-            size: self.size(),
+            size: self.sample_size(),
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct StatsVec {
-    data: Vec<Real>,
-}
-
-impl StatsVec {
-    pub fn new() -> Self {
-        Self::default()
-    }
-    pub fn stats_acc(&self) -> PointStatsAcc {
-        let mut acc = PointStatsAcc::new();
-        acc.add_many(self.data.iter().map(|x| *x));
-        return acc;
-    }
-}
-
-impl Stats for StatsVec {
+impl Sampling for Vec<Real> {
     fn add(&mut self, x: Real) {
-        self.data.push(x);
+        self.push(x);
     }
     fn total(&self) -> Real {
-        return self.data.iter().fold(0.0, |acc, x| acc + x);
+        return self.iter().fold(0.0, |acc, x| acc + x);
     }
     fn var(&self) -> Real {
         let (n, m1, m2) = self
-            .data
             .iter()
             .fold((0, 0., 0.), |acc, x| (acc.0 + 1, acc.1 + x, acc.2 + x * x));
         return (m2 / n as Real) - sqr(m1 / n as Real);
     }
     fn skew(&self) -> Real {
-        self.stats_acc().skew()
+        Accumulator::from_data(self.iter().cloned()).skew()
     }
     fn kurt(&self) -> Real {
-        self.stats_acc().kurt()
+        Accumulator::from_data(self.iter().cloned()).kurt()
     }
-    fn size(&self) -> usize {
-        return self.data.len();
+    fn sample_size(&self) -> usize {
+        return self.len();
     }
     fn min(&self) -> Real {
-        return self.data.iter().fold(INF, |acc, x| acc.min(*x));
+        return self.iter().fold(INF, |acc, x| acc.min(*x));
     }
     fn max(&self) -> Real {
-        return self.data.iter().fold(-INF, |acc, x| acc.max(*x));
+        return self.iter().fold(-INF, |acc, x| acc.max(*x));
     }
-    fn stats(&self) -> PointStats {
-        let acc = self.stats_acc();
-        PointStats {
-            mean: acc.mean(),
-            std: acc.std(),
-            skew: acc.skew(),
-            kurt: acc.kurt(),
-            min: acc.min(),
-            max: acc.max(),
-            size: acc.n,
-        }
+    fn stats(&self) -> Stats {
+        Accumulator::from_data(self.iter().cloned()).stats()
     }
-    fn last(&self) -> Real {
-        match self.data.last() {
+    fn last_sample(&self) -> Real {
+        match self.last() {
             Some(x) => *x,
             _ => NAN,
         }
     }
 }
 
+/// A simple accumulator of point statistics.
+///
+/// It stores the latest value computed from number of samples, moments
+/// minimum and maximum values and use it to compute descriptive statistics such
+/// as the mean, variance, skewness, etc.
 #[derive(Debug, Copy, Clone, PartialEq, CopyGetters, Getters)]
-pub struct PointStatsAcc {
+pub struct Accumulator {
     n: usize,
     m1: Real,
     m2: Real,
@@ -116,13 +101,35 @@ pub struct PointStatsAcc {
     last: Real,
 }
 
-impl PointStatsAcc {
+impl Accumulator {
+    /// Create new empty Point Stats accumulator
     pub fn new() -> Self {
         Self::default()
     }
+
+    /// Feed iterator into point stats accumulator
+    pub fn from_data(iter: impl IntoIterator<Item = Real>) -> Self {
+        let mut acc = Accumulator::new();
+        acc.add_many(iter);
+        return acc;
+    }
+
+    /// Merge two accumulators
+    pub fn merge(&self, other: &Self) -> Self {
+        Accumulator {
+            n: self.n + other.n,
+            m1: self.m1 + other.m1,
+            m2: self.m2 + other.m2,
+            m3: self.m3 + other.m3,
+            m4: self.m4 + other.m4,
+            min: self.min + other.min,
+            max: self.max + other.max,
+            last: self.last + other.last,
+        }
+    }
 }
 
-impl Stats for PointStatsAcc {
+impl Sampling for Accumulator {
     fn add(&mut self, x: Real) {
         self.n += 1;
         self.m1 += x;
@@ -166,17 +173,17 @@ impl Stats for PointStatsAcc {
     fn max(&self) -> Real {
         self.max
     }
-    fn size(&self) -> usize {
+    fn sample_size(&self) -> usize {
         self.n
     }
-    fn last(&self) -> Real {
+    fn last_sample(&self) -> Real {
         return self.last;
     }
 }
 
-impl Default for PointStatsAcc {
+impl Default for Accumulator {
     fn default() -> Self {
-        PointStatsAcc {
+        Accumulator {
             n: 0,
             m1: 0.,
             m2: 0.,
@@ -194,9 +201,11 @@ pub fn sqr(x: Real) -> Real {
     x * x
 }
 
+/// A simple struct that stores basic values of descriptive statistics about a
+/// sample or distribution.
 #[derive(Debug, Copy, Clone, PartialEq, Deserialize, Serialize, Getters, CopyGetters, Setters)]
 #[getset(get_copy = "pub", set = "pub")]
-pub struct PointStats {
+pub struct Stats {
     mean: Real,
     std: Real,
     skew: Real,
@@ -213,7 +222,7 @@ mod tests {
 
     #[test]
     fn simple_stats() {
-        let mut acc = PointStatsAcc::new();
+        let mut acc = Accumulator::new();
         acc.add(0.);
         acc.add_many(vec![1., 2., 3., 4.]);
         let st = acc.stats();

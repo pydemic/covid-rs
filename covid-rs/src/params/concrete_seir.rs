@@ -2,7 +2,6 @@ use super::{
     bound_params::{ForState, MapComponents},
     seir::{daily_probability, SEIRParams, SEIRParamsData},
     universal_seir::UniversalSEIRParams,
-    BoundParams,
 };
 use crate::prelude::{AgeDistribution10, AgeParam, Real};
 use getset::{Getters, Setters};
@@ -14,17 +13,40 @@ use std::fmt::Debug;
 // Default param for COVID-19
 ///////////////////////////////////////////////////////////////////////////////
 
-const PROB_ASYMPTOMATIC: Real = 0.42;
-const PROB_SEVERE: Real = 0.18;
-const PROB_CRITICAL: Real = 0.22;
-const PROB_DEATH: Real = 0.42;
-const CASE_FATALITY_RATIO: Real = PROB_SEVERE * PROB_CRITICAL * PROB_DEATH;
-//const INFECTION_FATALITY_RATIO: Real = CASE_FATALITY_RATIO * PROB_ASYMPTOMATIC;
-const ASYMPTOMATIC_INFECTIOUSNESS: Real = 0.50;
-const INCUBATION_PERIOD: Real = 3.69;
-const INFECTIOUS_PERIOD: Real = 3.47;
-const SEVERE_PERIOD: Real = 7.19;
-const CRITICAL_PERIOD: Real = 17.50 - 7.19;
+pub const PROB_ASYMPTOMATIC: Real = 0.42;
+pub const PROB_SEVERE: Real = 0.18;
+pub const PROB_CRITICAL: Real = 0.22;
+pub const PROB_DEATH: Real = 0.49; // CFR / (PROB_SEVERE * PROB_CRITICAL)
+pub const CASE_FATALITY_RATIO: Real = PROB_SEVERE * PROB_CRITICAL * PROB_DEATH;
+pub const INFECTION_FATALITY_RATIO: Real = CASE_FATALITY_RATIO * PROB_ASYMPTOMATIC;
+pub const ASYMPTOMATIC_INFECTIOUSNESS: Real = 0.50;
+pub const INCUBATION_PERIOD: Real = 3.69;
+pub const INFECTIOUS_PERIOD: Real = 3.47;
+pub const SEVERE_PERIOD: Real = 7.19;
+pub const CRITICAL_PERIOD: Real = 17.50 - 7.19;
+
+// Distributions
+pub const PROB_ASYMPTOMATIC_DISTRIBUTION: AgeDistribution10 = [
+    0.619231, 0.469595, 0.515000, 0.578082, 0.545763, 0.476000, 0.483709, 0.497096, 0.582090,
+];
+pub const PROB_SEVERE_DISTRIBUTION: AgeDistribution10 = [
+    0.000053, 0.000869, 0.020194, 0.059334, 0.077873, 0.171429, 0.243948, 0.333939, 0.316103,
+];
+pub const PROB_CRITICAL_DISTRIBUTION: AgeDistribution10 = [
+    0.500000, 0.347639, 0.060636, 0.050217, 0.077311, 0.148810, 0.333795, 0.526186, 0.865129,
+];
+pub const PROB_DEATH_DISTRIBUTION: AgeDistribution10 = [PROB_DEATH; 9];
+pub const CASE_FATALITY_RATIO_DISTRIBUTION: AgeDistribution10 = [
+    0.000026, 0.000148, 0.000600, 0.001460, 0.002950, 0.012500, 0.039900, 0.086100, 0.134000,
+];
+pub const INFECTION_FATALITY_RATIO_DISTRIBUTION: AgeDistribution10 = [
+    0.000016, 0.000069, 0.000309, 0.000844, 0.001610, 0.005950, 0.019300, 0.042800, 0.078000,
+];
+pub const ASYMPTOMATIC_INFECTIOUSNESS_DISTRIBUTION: AgeDistribution10 = [0.50; 9];
+pub const INCUBATION_PERIOD_DISTRIBUTION: AgeDistribution10 = [3.69; 9];
+pub const INFECTIOUS_PERIOD_DISTRIBUTION: AgeDistribution10 = [3.47; 9];
+pub const SEVERE_PERIOD_DISTRIBUTION: AgeDistribution10 = [7.19; 9];
+pub const CRITICAL_PERIOD_DISTRIBUTION: AgeDistribution10 = [17.50 - 7.19; 9];
 
 /// Trait for types that can be created from a UniversalSEIRParams implementation
 pub trait FromUniversalParams {
@@ -141,13 +163,19 @@ macro_rules! method {
 ///
 /// Compose with ClinicalSEIRParams to get the full set or compose with
 /// CachedSEIRParams to obtain a cached version of those parameters.
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize, Getters, Setters)]
 #[serde(default)]
+#[getset(set = "pub")]
 pub struct EpidemicSEIRParams<T> {
+    #[getset(get = "pub with_prefix")]
     incubation_period: T,
+    #[getset(get = "pub with_prefix")]
     infectious_period: T,
+    #[getset(get = "pub with_prefix")]
     asymptomatic_infectiousness: T,
+    #[getset(get = "pub with_prefix")]
     prob_asymptomatic: T,
+    #[getset(get = "pub with_prefix")]
     case_fatality_ratio: T,
 }
 
@@ -180,6 +208,7 @@ impl<T> EpidemicSEIRParams<T> {
         }
     }
 
+    /// Create a new object from default components
     fn default_components() -> Self
     where
         T: MapComponents<Elem = Real>,
@@ -190,6 +219,17 @@ impl<T> EpidemicSEIRParams<T> {
             asymptomatic_infectiousness: T::from_component(ASYMPTOMATIC_INFECTIOUSNESS),
             prob_asymptomatic: T::from_component(PROB_ASYMPTOMATIC),
             case_fatality_ratio: T::from_component(CASE_FATALITY_RATIO),
+        }
+    }
+
+    /// Create a new object from epidemic distributions
+    fn default_distributions() -> EpidemicSEIRParams<AgeDistribution10> {
+        EpidemicSEIRParams {
+            incubation_period: INCUBATION_PERIOD_DISTRIBUTION,
+            infectious_period: INFECTIOUS_PERIOD_DISTRIBUTION,
+            asymptomatic_infectiousness: ASYMPTOMATIC_INFECTIOUSNESS_DISTRIBUTION,
+            prob_asymptomatic: PROB_ASYMPTOMATIC_DISTRIBUTION,
+            case_fatality_ratio: CASE_FATALITY_RATIO_DISTRIBUTION,
         }
     }
 
@@ -266,18 +306,43 @@ impl FromUniversalParams for EpidemicSEIRParams<Real> {
     }
 }
 
+macro_rules! register_defaults {
+    ($ty:ty, $name:ident) => {
+        impl Default for EpidemicSEIRParams<$ty> {
+            fn default() -> Self {
+                Self::$name().map(|x| (*x).into())
+            }
+        }
+
+        impl Default for ClinicalSEIRParams<$ty> {
+            fn default() -> Self {
+                Self::$name().map(|x| (*x).into())
+            }
+        }
+    };
+}
+
+register_defaults!(Real, default_components);
+register_defaults!(AgeDistribution10, default_distributions);
+register_defaults!(AgeParam, default_distributions);
+
 // ClinicalSEIRParams //////////////////////////////////////////////////////////
 
 /// ClinicalSEIRParams store information about the clinical evolution of cases.
 ///
 /// Composing with EpidemicSEIRParams, it is possible to implement arbitrary values
 /// for the full set of SEIRParams methods.
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize, Getters, Setters)]
 #[serde(default)]
+#[getset(set = "pub")]
 pub struct ClinicalSEIRParams<T> {
+    #[getset(get = "pub with_prefix")]
     severe_period: T,
+    #[getset(get = "pub with_prefix")]
     critical_period: T,
+    #[getset(get = "pub with_prefix")]
     prob_severe: T,
+    #[getset(get = "pub with_prefix")]
     prob_critical: T,
 }
 
@@ -300,6 +365,15 @@ impl<T> ClinicalSEIRParams<T> {
             critical_period: T::from_component(CRITICAL_PERIOD),
             prob_severe: T::from_component(PROB_SEVERE),
             prob_critical: T::from_component(PROB_CRITICAL),
+        }
+    }
+
+    fn default_distributions() -> ClinicalSEIRParams<AgeDistribution10> {
+        ClinicalSEIRParams {
+            severe_period: SEVERE_PERIOD_DISTRIBUTION,
+            critical_period: CRITICAL_PERIOD_DISTRIBUTION,
+            prob_severe: PROB_SEVERE_DISTRIBUTION,
+            prob_critical: PROB_CRITICAL_DISTRIBUTION,
         }
     }
 
@@ -331,8 +405,6 @@ impl<T> ClinicalSEIRParams<T> {
     method!(critical_period<S>);
     method!(prob_severe<S>);
     method!(prob_critical<S>);
-    // method!(data = severe_period[T]);
-    // method!(data = critical_period[T]);
 }
 
 impl<T: Default> Default for ClinicalSEIRParams<T> {
@@ -359,22 +431,33 @@ impl FromUniversalParams for ClinicalSEIRParams<Real> {
 
 // FullSEIRParams //////////////////////////////////////////////////////////
 
-/// Compose EpidemicSEIRParams with ClinicalSEIRParams.
-#[derive(Copy, Clone, Debug, PartialEq, Getters, Setters, Serialize, Default)]
+/// Compose { epidemic: EpidemicSEIRParams, clinical: ClinicalSEIRParams }.
+///
+/// The two fields can be accessed directly.
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 #[serde(default)]
-#[getset(get = "pub", set = "pub")]
-pub struct FullSEIRParams<T> {
-    epidemic: EpidemicSEIRParams<T>,
-    clinical: ClinicalSEIRParams<T>,
+pub struct FullSEIRParams<T: Default> {
+    // FIXME: we only added "Default" to be able to implement Deserialize
+    pub epidemic: EpidemicSEIRParams<T>,
+    pub clinical: ClinicalSEIRParams<T>,
 }
 
-impl<T> FullSEIRParams<T> {
+impl<T: Default> FullSEIRParams<T> {
     pub fn new(epidemic: EpidemicSEIRParams<T>, clinical: ClinicalSEIRParams<T>) -> Self {
         FullSEIRParams { epidemic, clinical }
     }
 
-    pub fn map<S>(&self, f: impl Fn(&T) -> S) -> FullSEIRParams<S> {
+    pub fn map<S: Default>(&self, f: impl Fn(&T) -> S) -> FullSEIRParams<S> {
         FullSEIRParams::new(self.epidemic.map(&f), self.clinical.map(&f))
+    }
+
+    /// Return a cached version of param set
+    pub fn cached(&self) -> CachedSEIRParams<Self, T>
+    where
+        // P: SEIRParamsData<T>,
+        T: MapComponents<Elem = Real> + Clone,
+    {
+        CachedSEIRParams::new(self)
     }
 }
 
@@ -421,7 +504,7 @@ impl UniversalSEIRParams for FullSEIRParams<Real> {
     );
 }
 
-impl<T> SEIRParamsData<T> for FullSEIRParams<T>
+impl<T: Default> SEIRParamsData<T> for FullSEIRParams<T>
 where
     T: MapComponents<Elem = Real>,
 {
@@ -458,10 +541,10 @@ pub struct CachedSEIRParams<P, T> {
 
 impl<P, T> CachedSEIRParams<P, T>
 where
-    P: SEIRParamsData<T>,
+    P: SEIRParamsData<T> + Clone,
     T: MapComponents<Elem = Real>,
 {
-    pub fn new(params: P) -> Self {
+    pub fn new(params: &P) -> Self {
         CachedSEIRParams {
             incubation_transition_prob: params
                 .with_incubation_period_data(|xs| xs.map_components(daily_probability)),
@@ -471,19 +554,29 @@ where
                 .with_severe_period_data(|xs| xs.map_components(daily_probability)),
             critical_transition_prob: params
                 .with_critical_period_data(|xs| xs.map_components(daily_probability)),
-            params,
+            params: params.clone(),
         }
     }
 }
 
 impl<P, T> Default for CachedSEIRParams<P, T>
 where
-    P: SEIRParamsData<T> + Default,
+    P: SEIRParamsData<T> + Default + Clone,
     T: MapComponents<Elem = Real>,
 {
     default fn default() -> Self {
         let params = P::default();
-        Self::new(params)
+        Self::new(&params)
+    }
+}
+
+impl<P, T> From<P> for CachedSEIRParams<P, T>
+where
+    P: SEIRParamsData<T> + Clone,
+    T: MapComponents<Elem = Real>,
+{
+    fn from(params: P) -> Self {
+        Self::new(&params)
     }
 }
 
@@ -553,30 +646,10 @@ where
 
 impl<P> FromUniversalParams for CachedSEIRParams<P, Real>
 where
-    P: FromUniversalParams + SEIRParamsData<Real>,
+    P: FromUniversalParams + SEIRParamsData<Real> + Clone,
 {
     fn from_universal_params(params: &impl UniversalSEIRParams) -> Self {
         let src: P = FromUniversalParams::from_universal_params(params);
-        Self::new(src)
+        Self::new(&src)
     }
 }
-
-macro_rules! register_defaults {
-    ($ty:ty) => {
-        impl Default for EpidemicSEIRParams<$ty> {
-            fn default() -> Self {
-                Self::default_components()
-            }
-        }
-
-        impl Default for ClinicalSEIRParams<$ty> {
-            fn default() -> Self {
-                Self::default_components()
-            }
-        }
-    };
-}
-
-register_defaults!(Real);
-register_defaults!(AgeDistribution10);
-register_defaults!(AgeParam);

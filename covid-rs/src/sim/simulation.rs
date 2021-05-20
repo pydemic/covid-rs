@@ -1,16 +1,16 @@
 use crate::{
     epidemic::*,
-    params::LocalBind,
+    params::{FromUniversalParams, FullSEIRParams, LocalBind, UniversalSEIRParams},
     prelude::*,
     sim::{Reporter, *},
 };
-use getset::Getters;
+use getset::{Getters, MutGetters};
 use rand::prelude::{SeedableRng, SmallRng};
 use std::{cell::RefCell, fmt::Debug};
 
 /// Simulation stores a population of agents and some objects responsible for
 /// controlling the dynamics of those Agents.
-#[derive(Getters)]
+#[derive(Getters, MutGetters)]
 pub struct Simulation<W, S, PS, const N: usize> {
     #[getset(get = "pub")]
     population: Vec<S>,
@@ -19,8 +19,9 @@ pub struct Simulation<W, S, PS, const N: usize> {
     #[getset(get = "pub")]
     infections_per_iter: Vec<usize>,
     #[getset(get = "pub")]
-    params: W,
+    params: RefCell<W>,
 
+    #[getset(get = "pub", get_mut = "pub")]
     sampler: PS,
     reporter: EpicurveReporter<W, Vec<S>, { N }>,
     world_update: Vec<Box<dyn FnMut(&mut W, &Vec<S>)>>,
@@ -30,7 +31,7 @@ pub struct Simulation<W, S, PS, const N: usize> {
 
 impl<'a, W, S, PS, const N: usize> Simulation<W, S, PS, { N }>
 where
-    PS: Sampler<Vec<S>>,
+    PS: PopulationSampler<Vec<S>>,
     W: LocalBind<S>,
     S: EpiModel + RandomUpdate<W::Local> + Debug,
 {
@@ -41,7 +42,7 @@ where
             infections_per_agent: vec![0].repeat(population.len()),
             infections_per_iter: vec![],
             population,
-            params,
+            params: RefCell::new(params),
             sampler,
             world_update: vec![],
             population_update: vec![],
@@ -77,23 +78,26 @@ where
             self.update_pairs();
 
             // Arbitrary updates
+            let mut params = self.params.borrow_mut();
             for f in self.population_update.iter_mut() {
-                f(&self.params, &mut self.population);
+                f(&params, &mut self.population);
             }
             for f in self.world_update.iter_mut() {
-                f(&mut self.params, &self.population);
+                f(&mut params, &self.population);
             }
-            self.reporter.process(n, &self.params, &self.population)
+            self.reporter.process(n, &params, &self.population)
         }
+
         return self;
     }
 
     /// Self-update agents. Resolve the natural evolution of all agents
     fn update_agents(&mut self) {
         let rng = &mut *self.rng.borrow_mut();
+        let mut params = self.params.borrow_mut();
         for obj in self.population.iter_mut() {
-            self.params.bind_to_object(obj);
-            obj.random_update(self.params.local(), rng);
+            params.bind_to_object(obj);
+            obj.random_update(params.local(), rng);
         }
     }
 
@@ -182,6 +186,56 @@ where
             1.0
         }
     }
+
+    /// Initialize simulation and calibrate sampler from a curve of cases.
+    ///
+    /// This is a somewhat simplistic view on model calibration. We just run
+    /// the simulation normally but at each step we recalibrate the sampler
+    /// to produce the same number of infections as expected from the epidemic
+    /// curve.
+    ///
+    ///  
+    pub fn calibrate_sampler_from_cases(&mut self, cases: &[Real]) {
+        // TODO: create calibrator struct
+        let alpha = 0.5;
+        let min_contacts = 0.0;
+        let max_contacts = 10.0;
+        let min_scale = 0.75;
+        let max_scale = 1.25;
+        let e_ratio = 0.5;
+        let mut error = 0.0;
+
+        for raw_target in cases {
+            let target = (raw_target - e_ratio * error).max(0.0);
+            let estimate = self.sampler.expected_infection_pairs(&self.population);
+            let grow = ((target + alpha) / (estimate + alpha)).clamp(min_scale, max_scale);
+
+            // Calibrate contacts. Other implementations might calibrate different
+            // coefficients, but we do not have any way to generalize it yet.
+            let c1 = self.sampler.contacts();
+            let c2 = (c1 * grow).clamp(min_contacts, max_contacts);
+            self.sampler.set_contacts(c2);
+
+            // Run and register the number of cases
+            self.run(1);
+            let n_cases = *self.infections_per_iter().last().unwrap();
+            error += n_cases as Real - raw_target;
+        }
+    }
+
+    /// Get epidemiological params for given agent
+    ///
+    /// Return Some(FullSEIRParams<f64>) if agent exists.
+    pub fn get_local_epiparams(&self, i: usize) -> Option<FullSEIRParams<f64>>
+    where
+        S: EpiModel,
+        W::Local: UniversalSEIRParams,
+    {
+        let ag = self.population.get(i)?;
+        let mut params = self.params.borrow_mut();
+        params.bind_to_object(ag);
+        Some(FromUniversalParams::from_universal_params(params.local()))
+    }
 }
 
 impl<W, S, const N: usize> Simulation<W, S, SimpleSampler, { N }>
@@ -203,7 +257,7 @@ where
 
 impl<W, S, PS, const N: usize> OwnsStateSlice for Simulation<W, S, PS, { N }>
 where
-    PS: Sampler<Vec<S>> + Default,
+    PS: PopulationSampler<Vec<S>> + Default,
     W: LocalBind<S> + Default,
     S: EpiModel + RandomUpdate<W::Local> + Debug,
 {

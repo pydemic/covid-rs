@@ -53,6 +53,23 @@ impl<C: Clone> EpiModel for SIR<C> {
         }
     }
 
+    fn force_infectious(&mut self, force_dead: bool) -> bool {
+        match self {
+            Self::Susceptible => false,
+            Self::Infectious(c) | Self::Recovered(c) => {
+                *self = Self::Infectious(c.clone());
+                return true;
+            }
+            Self::Dead(c) => {
+                if force_dead {
+                    *self = Self::Infectious(c.clone());
+                    return true;
+                }
+                return false;
+            }
+        }
+    }
+
     fn is_recovered(&self) -> bool {
         self.index() == Self::R
     }

@@ -60,7 +60,6 @@ pub trait LocalBind<S> {
         new.bind_to_object(obj);
         return new.local().clone();
     }
-
 }
 
 impl<S> LocalBind<S> for SEIRUniversalParamSet {
@@ -88,7 +87,7 @@ impl<S> LocalBind<S> for SEIRUniversalParamSet {
 impl<T, D> LocalBind<T> for AgeDependentSEIR<D>
 where
     T: HasAge,
-    D: MapComponents<Elem = Real>,
+    D: MapComponents<Elem = Real> + Default,
 {
     type Local = Self;
     type World = SEIRParamSet<D>;
@@ -156,7 +155,7 @@ pub type VaccineDependentSEIR<T> = SimpleVaccineBound<SEIRParamSet<T>>;
 
 impl<M, D> LocalBind<SimpleAgent<M, bool>> for VaccineDependentSEIR<D>
 where
-    D: MapComponents<Elem = Real>,
+    D: MapComponents<Elem = Real> + Default,
 {
     type Local = Self;
     type World = SEIRParamSet<D>;
@@ -215,4 +214,14 @@ where
             case_fatality_ratio,
         }
     );
+}
+
+impl<P> From<P> for SimpleVaccineBound<P> {
+    fn from(params: P) -> Self {
+        SimpleVaccineBound {
+            params,
+            age: 0,
+            vaccine: false,
+        }
+    }
 }

@@ -1,23 +1,22 @@
 use std::fs;
 
-use covid::{prelude::*, sampler::SimpleSampler, utils::*};
+use covid::{
+    epidemic::*,
+    models::*,
+    params::{FullSEIRParams, VaccineDependentSEIR},
+    prelude::*,
+    sim::*,
+    utils::*,
+};
 use csv::*;
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Serialize, Debug, Default, Clone, Copy)]
-#[serde(default)]
-pub struct ParamSet {
-    baseline: Params,
-    voc: Params,
-}
+type Params = FullSEIRParams<AgeParam>;
 
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
 #[serde(default)]
 pub struct Epicurve {
-    data: Vec<usize>,
-    smoothness: Real,
-    // scaling: Real,
-    // tol: Real,
+    data: Vec<Real>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -29,7 +28,7 @@ pub struct Config {
     prob_infection: Real,
     num_iter: usize,
     verbose: bool,
-    params: ParamSet,
+    params: Option<Params>,
     pop_distrib: Option<AgeDistribution10>,
     pop_counts: Option<AgeCount10>,
     epicurve: Option<Epicurve>,
@@ -50,7 +49,7 @@ impl Default for Config {
             prob_infection: 0.1,
             num_iter: 30,
             verbose: true,
-            params: ParamSet::default(),
+            params: Some(Default::default()),
             pop_distrib: Some([1.0; 9]),
             pop_counts: None,
             epicurve: None,
@@ -72,20 +71,22 @@ pub fn read_params_table(path: &str, params: &mut Params) -> Result<()> {
     let mut prob_severe: AgeDistribution10 = [0.0; 9];
     let mut prob_asymptomatic: AgeDistribution10 = [0.0; 9];
     let mut prob_critical: AgeDistribution10 = [0.0; 9];
-    let mut prob_death: AgeDistribution10 = [0.0; 9];
+    let mut cfr: AgeDistribution10 = [0.0; 9];
 
     for (i, res) in reader.deserialize().enumerate() {
         let row: TableRow = res?;
         prob_asymptomatic[i] = 1.0 - row.ifr / row.cfr;
         prob_severe[i] = row.severe;
         prob_critical[i] = row.critical / row.severe;
-        prob_death[i] = row.cfr / row.critical;
+        cfr[i] = row.cfr;
     }
 
-    params.set_prob_asymptomatic_distrib(prob_asymptomatic);
-    params.set_prob_severe_distrib(prob_severe);
-    params.set_prob_critical_distrib(prob_critical);
-    params.set_prob_death_distrib(prob_death);
+    params
+        .epidemic
+        .set_prob_asymptomatic(prob_asymptomatic.into());
+    params.clinical.set_prob_severe(prob_severe.into());
+    params.clinical.set_prob_critical(prob_critical.into());
+    params.epidemic.set_case_fatality_ratio(cfr.into());
     return Ok(());
 }
 
@@ -95,19 +96,15 @@ pub fn main() {
 
     let cfg_data = fs::read_to_string("conf.toml").unwrap();
     let mut cfg: Config = toml::from_str(&cfg_data).unwrap();
+    let mut params = cfg.params.unwrap_or_default();
 
-    match read_params_table("baseline-params.csv", &mut cfg.params.baseline) {
+    match read_params_table("params.csv", &mut params) {
         Ok(_) => {
-            println!("Using distributions from baseline-params.csv");
+            println!("Using distributions from params.csv");
         }
         _ => {}
     }
-    match read_params_table("voc-params.csv", &mut cfg.params.voc) {
-        Ok(_) => {
-            println!("Using distributions from voc-params.csv");
-        }
-        _ => {}
-    }
+    cfg.params = Some(params);
 
     if cfg.verbose {
         println!("{:#?}", cfg);
@@ -116,49 +113,36 @@ pub fn main() {
 }
 
 pub fn simple_simulation(cfg: Config) {
-    let mut sampler: AnySampler = SimpleSampler::new(cfg.n_contacts, cfg.prob_infection).into();
-    let mut builder;
+    type T = SimpleAgent<SEICHAR<()>, bool>;
+    let sampler = SimpleSampler::new(cfg.n_contacts, cfg.prob_infection);
+    let population: Vec<T>;
+    let mut rng = default_rng();
 
     // Should we construct from distribution or pop_counts?
     if let Some(ns) = cfg.pop_counts {
-        builder = PopBuilder::new(0);
-        builder.age_counts(ns);
-    } else if let Some(pop_distrib) = cfg.pop_distrib {
-        builder = PopBuilder::new(cfg.pop_size);
-        builder.age_distribution(pop_distrib);
+        population = new_population_from_ages(ns, &mut rng);
+    } else if let Some(distrib) = cfg.pop_distrib {
+        population = new_population_from_distribution(cfg.pop_size, distrib, &mut rng);
     } else {
-        builder = PopBuilder::new(cfg.pop_size);
-        builder.age_distribution([1.0; 9]);
+        population = new_population(cfg.pop_size);
     }
+
+    // Initialize simulation
+    let params: VaccineDependentSEIR<AgeParam> = cfg.params.unwrap_or_default().cached().into();
+    let mut sim: Simulation<_, _, _, { T::CARDINALITY }> =
+        Simulation::new(params, population, sampler);
 
     // Should we infect from epicurve?
     if let Some(epi) = cfg.epicurve.clone() {
-        let mut stats = StatsVec::new();
-        builder.contaminate_from_epicurve(
-            &epi.data,
-            &mut sampler,
-            &cfg.params.baseline,
-            epi.smoothness,
-            &mut stats,
-        );
-        println!("{:?}", stats.stats());
+        sim.contaminate_at_random( epi.data[0].ceil() as usize, &mut rng);
+        sim.calibrate_sampler_from_cases(epi.data.as_slice());
     } else {
-        builder.contaminate_at_random(cfg.initial_infections, true.into());
+        sim.contaminate_at_random(cfg.initial_infections, &mut rng);
     }
 
-    let mut sim = builder.build(sampler);
-
     // Configure simulation
-    sim.set_params_baseline(cfg.params.baseline);
-    sim.set_params_voc(cfg.params.voc);
     sim.run(cfg.num_iter);
 
     // Write output
-    let reporter = Report::new(&sim);
-    cfg.write_data(reporter.epicurve_csv(), "epicurve.csv");
-    // cfg.write_data(
-    //     toml::to_string_pretty(&reporter.results()).unwrap(),
-    //     "results.toml",
-    // );
-    // sim.describe();
+    cfg.write_data(sim.render_epicurve_csv(T::CSV_HEADER), "epicurve.csv");
 }

@@ -61,6 +61,23 @@ impl<C: Clone> EpiModel for SEAIR<C> {
         }
     }
 
+    fn force_infectious(&mut self, force_dead: bool) -> bool {
+        match self {
+            Self::Susceptible => false,
+            Self::Exposed(c) | Self::Asymptomatic(c) | Self::Infectious(c) | Self::Recovered(c) => {
+                *self = Self::Infectious(c.clone());
+                return true;
+            }
+            Self::Dead(c) => {
+                if force_dead {
+                    *self = Self::Infectious(c.clone());
+                    return true;
+                }
+                return false;
+            }
+        }
+    }
+
     fn new_infectious_with(clinical: &Self::Clinical) -> Self {
         Self::Infectious(clinical.clone())
     }

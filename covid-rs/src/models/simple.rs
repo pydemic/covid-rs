@@ -95,10 +95,37 @@ where
         });
         return self;
     }
+
+    /// Vaccinate all individuals with the given vaccine and uniform
+    /// probability
+    fn distribute_vaccines<F, C>(&mut self, n: usize, vaccine: V, f: F) -> &mut Self
+    where
+        F: FnMut(&Self::State) -> C,
+        C: Ord,
+    {
+        let mut score = f;
+        let mut m = n;
+        let mut keys = Vec::with_capacity(self.count());
+        self.each_agent(&mut |i, ag| keys.push((score(ag), i)));
+        keys.sort_unstable();
+
+        while m > 0 {
+            match keys.pop() {
+                Some((_, id)) => {
+                    let ag = self.get_agent_mut(id).unwrap();
+                    ag.vaccinate(&vaccine);
+                    m -= 1;
+                }
+                _ => break,
+            }
+        }
+        return self;
+    }
+
     /// Vaccinate all individuals with the given vaccine and uniform
     /// probability
     fn vaccinate_random<R: Rng>(&mut self, value: V, prob: Real, rng: &mut R) -> &mut Self {
-        self.vaccinate_if(value, |ag| rng.gen_bool(prob))
+        self.vaccinate_if(value, |_| rng.gen_bool(prob))
     }
 
     /// Vaccinate all individuals older than the given age.

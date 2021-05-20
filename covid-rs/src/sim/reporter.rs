@@ -8,7 +8,7 @@ pub type ReporterList<W, P> = Vec<(usize, ReporterFn<W, P>)>;
 /// Functions, boxed functions, closures, etc can be executed interpreted as
 /// reporters.  
 pub trait Reporter<W, P> {
-    /// Register a reporter function to be called every n_steps.
+    /// Execute all reporter functions in the given step.
     fn process(&mut self, n: usize, world: &W, population: &P);
 }
 

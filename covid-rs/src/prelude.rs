@@ -4,7 +4,9 @@ pub use crate::epidemic::*;
 // pub use crate::pop_builder::PopBuilder;
 // pub use crate::simulation::Simulation;
 // pub use crate::reporter::{Report};
-pub use crate::sampler::{AnySampler, ContactMatrixSampler, Sampler, SimpleSampler};
+pub use crate::sampler::{
+    AnySampler, ContactMatrixSampler, PopulationSampler, Sampler, SimpleSampler,
+};
 
 /// Basic representation of time. This crate usually assumes time is measured
 /// in days.
@@ -75,7 +77,8 @@ where
 
     #[inline]
     fn for_age(&self, age: Age) -> T {
-        self[(age / 10).max(8) as usize]
+        let idx = (age / 10).min(8);
+        self[idx as usize]
     }
 }
 
@@ -117,6 +120,18 @@ impl AgeParam {
 impl Default for AgeParam {
     fn default() -> Self {
         AgeParam::Scalar(0.)
+    }
+}
+
+impl From<AgeDistribution10> for AgeParam {
+    fn from(v: AgeDistribution10) -> Self {
+        AgeParam::Distribution(v)
+    }
+}
+
+impl From<Real> for AgeParam {
+    fn from(v: Real) -> Self {
+        AgeParam::Scalar(v)
     }
 }
 

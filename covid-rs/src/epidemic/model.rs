@@ -50,6 +50,62 @@ pub trait EpiModel: Sized + Clone {
         Self::new_infectious_with(&Self::Clinical::default())
     }
 
+    /// Force element into an infectious state, when this is possible.
+    ///
+    /// This usually means that it will migrate any contaminated state back to
+    /// infectious and the susceptible state will be left as is.
+    fn force_infectious(&mut self, force_dead: bool) -> bool;
+
+    /// Return the relative probability of contamination from self. Usually this
+    /// should be equal to 1.0 for the default infectious state some ratio
+    /// compared to this state.
+    fn contagion_odds(&self) -> Real;
+
+    /// Return true if one agent can contaminate the other. This must return true
+    /// if contagion is, in principle, possible. Further external restrictions
+    /// (like, e.g., physical distance) may make the infection impossible, but
+    /// this should be treated later in the pipeline.
+    fn can_contaminate(&self, other: &Self) -> bool {
+        self.is_contagious() && other.is_susceptible()
+    }
+
+    /// Transfer contamination state from other and return a boolean telling if
+    /// the contamination occurred or not. This method should force contamination
+    /// even when it is not clinically possible (e.g., self is recovered).
+    /// It is used by contaminate_from(), which checks basic clinical plausibility
+    /// and uses this method to transfer contamination to a susceptible agent
+    /// if contamination is possible.
+    ///
+    /// This method should not simply clone the contamination state from `other`
+    /// but rather modify self to the proper state that describes the start
+    /// of an infection. For instance, in a model like SEIR, if other is in some
+    /// infected state, like `SEIR::Recovered(params)`, self will be modified
+    /// to `SEIR::Exposed(params)`, independently from its current state.
+    fn transfer_contamination_from(&mut self, other: &Self) -> bool;
+
+    /// Contaminate `self` from `other` if contamination is plausible.
+    ///
+    /// Return a boolean telling if contamination occurred.
+    fn contaminate_from(&mut self, other: &Self) -> bool {
+        if other.can_contaminate(self) {
+            self.transfer_contamination_from(other);
+            return true;
+        }
+        return false;
+    }
+
+    /// Return a copy of agent after interacting with other assuming that
+    /// contamination should occur. This method return None if `other` is not able
+    /// to contaminate `self`
+    fn contaminated_from(&self, other: &Self) -> Option<Self> {
+        if other.can_contaminate(self) {
+            let mut new = self.clone();
+            new.transfer_contamination_from(other);
+            return Some(new);
+        }
+        return None;
+    }
+
     /// Return true if agent has been contaminated with disease irrespective of
     /// the current clinical state.
     ///
@@ -68,64 +124,6 @@ pub trait EpiModel: Sized + Clone {
     /// true even if the probability of contamination is very low.
     fn is_contagious(&self) -> bool {
         self.contagion_odds() > 0.0
-    }
-
-    /// Return the relative probability of contamination from self. Usually this
-    /// should be equal to 1.0 for the default infectious state some ratio
-    /// compared to this state.
-    fn contagion_odds(&self) -> Real;
-
-    /// Return true if one agent can contaminate the other. This must return true
-    /// if contagion is, in principle, possible. Further external restrictions
-    /// (like, e.g., physical distance) may make the infection impossible, but
-    /// this should be treated later in the pipeline.
-    fn can_contaminate(&self, other: &Self) -> bool {
-        self.is_contagious() && other.is_susceptible()
-    }
-
-    /// Return a copy of agent after interacting with other assuming that
-    /// contamination should occur. This method return None if `other` is not able
-    /// to contaminate `self`
-    fn contaminated_from(&self, other: &Self) -> Option<Self> {
-        if other.can_contaminate(self) {
-            let mut new = self.clone();
-            new.transfer_contamination_from(other);
-            return Some(new);
-        }
-        return None;
-    }
-
-    /// Transfer contamination state from other and return a boolean telling if
-    /// the contamination occurred or not. This method should force contamination
-    /// even when it is not clinically possible (e.g., self is recovered).
-    /// It is used by contaminate_from(), which checks basic clinical plausibility
-    /// and uses this method to transfer contamination to a susceptible agent
-    /// if contamination is possible.
-    ///
-    /// This method should not simply clone the contamination state from `other`
-    /// but rather modify self to the proper state that describes the start
-    /// of an infection. For instance, in a model like SEIR, if other is in some
-    /// infected state, like `SEIR::Recovered(params)`, self will be modified
-    /// to `SEIR::Exposed(params)`, independently from its current state.
-    fn transfer_contamination_from(&mut self, other: &Self) -> bool;
-
-    /// Contaminate `self` from `other` if contamination is plausible.
-    fn contaminate_from(&mut self, other: &Self) -> bool {
-        if other.can_contaminate(self) {
-            self.transfer_contamination_from(other);
-            return true;
-        }
-        return false;
-    }
-
-    /// Contaminate `self` from `other` with probability `prob`, if
-    /// contamination is plausible.
-    fn contaminate_from_prob<R: Rng>(&mut self, other: &Self, prob: Real, rng: &mut R) -> bool {
-        if other.can_contaminate(self) && rng.gen_bool(prob) {
-            self.transfer_contamination_from(other);
-            return true;
-        }
-        return false;
     }
 
     /// Return true if agent is recovered from disease.
@@ -188,6 +186,7 @@ macro_rules! compartment_methods {
 pub trait EpiModelPopulationExt: Population {
     // Methods for SIR-based populations //////////////////////////////////////
     compartment_methods!(susceptible, for=EpiModel);
+    compartment_methods!(contaminated, for=EpiModel);
     compartment_methods!(dead, for=EpiModel);
     compartment_methods!(contagious, for=SEIRLike);
     compartment_methods!(infectious, for=SEIRLike);
@@ -196,6 +195,22 @@ pub trait EpiModelPopulationExt: Population {
     compartment_methods!(asymptomatic, for=SEICHARLike);
     compartment_methods!(severe, for=SEICHARLike);
     compartment_methods!(critical, for=SEICHARLike);
+
+    /// Return the fraction of population that is susceptible
+    fn susceptible_ratio(&self) -> Real
+    where
+        Self::State: EpiModel,
+    {
+        self.n_susceptible() as Real / self.count() as Real
+    }
+
+    /// Return the fraction of population that is contaminated
+    fn attack_ratio(&self) -> Real
+    where
+        Self::State: EpiModel,
+    {
+        self.n_contaminated() as Real / self.count() as Real
+    }
 
     /// Count the number of (Susceptible, Infectious, Recovered, Total)
     /// individuals.
@@ -331,6 +346,18 @@ pub trait EpiModelPopulationExt: Population {
     {
         let infectious = Self::State::new_infectious_with(clinical);
         return self.contaminate_at_random_from(&infectious, n, rng);
+    }
+
+    /// Force all contaminated agents into an infectious state possibly even
+    /// including dead elements.
+    fn force_infectious(&mut self, force_dead: bool) -> &mut Self
+    where
+        Self::State: EpiModel,
+    {
+        self.each_agent_mut(|_, ag| {
+            ag.force_infectious(force_dead);
+        });
+        return self;
     }
 
     /// FIXME: does it work? Is it better than the current strategy?
@@ -495,6 +522,10 @@ where
         self.epimodel().index()
     }
 
+    fn force_infectious(&mut self, force_dead: bool) -> bool {
+        self.epimodel_mut().force_infectious(force_dead)
+    }
+
     default fn new_infectious_with(clinical: &Self::Clinical) -> Self {
         let mut new = Self::default();
         new.set_epimodel(<Self as HasEpiModel>::Model::new_infectious_with(clinical));
@@ -538,16 +569,6 @@ where
 
     default fn contaminate_from(&mut self, other: &Self) -> bool {
         self.epimodel_mut().contaminate_from(other.epimodel())
-    }
-
-    default fn contaminate_from_prob<R: Rng>(
-        &mut self,
-        other: &Self,
-        prob: Real,
-        rng: &mut R,
-    ) -> bool {
-        self.epimodel_mut()
-            .contaminate_from_prob(other.epimodel(), prob, rng)
     }
 
     default fn is_dead(&self) -> bool {

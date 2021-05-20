@@ -71,6 +71,28 @@ impl<C: Clone> EpiModel for SEICHAR<C> {
         Self::Infectious(clinical.clone())
     }
 
+    fn force_infectious(&mut self, force_dead: bool) -> bool {
+        match self {
+            Self::Susceptible => false,
+            Self::Exposed(c)
+            | Self::Critical(c)
+            | Self::Severe(c)
+            | Self::Asymptomatic(c)
+            | Self::Infectious(c)
+            | Self::Recovered(c) => {
+                *self = Self::Infectious(c.clone());
+                return true;
+            }
+            Self::Dead(c) => {
+                if force_dead {
+                    *self = Self::Infectious(c.clone());
+                    return true;
+                }
+                return false;
+            }
+        }
+    }
+
     fn contagion_odds(&self) -> Real {
         match self {
             Self::Infectious(_) => 1.0,
