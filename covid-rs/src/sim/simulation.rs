@@ -1,6 +1,6 @@
 use crate::{
     epidemic::*,
-    params::{FromUniversalParams, FullSEIRParams, LocalBind, UniversalSEIRParams},
+    params::{FromLocalParams, EpiParamsFull, LocalBind, EpiParamsLocalT},
     prelude::*,
     sim::{Reporter, *},
 };
@@ -226,15 +226,15 @@ where
     /// Get epidemiological params for given agent
     ///
     /// Return Some(FullSEIRParams<f64>) if agent exists.
-    pub fn get_local_epiparams(&self, i: usize) -> Option<FullSEIRParams<f64>>
+    pub fn get_local_epiparams(&self, i: usize) -> Option<EpiParamsFull<f64>>
     where
         S: EpiModel,
-        W::Local: UniversalSEIRParams,
+        W::Local: EpiParamsLocalT,
     {
         let ag = self.population.get(i)?;
         let mut params = self.params.borrow_mut();
         params.bind_to_object(ag);
-        Some(FromUniversalParams::from_universal_params(params.local()))
+        Some(FromLocalParams::from_local_params(params.local()))
     }
 }
 

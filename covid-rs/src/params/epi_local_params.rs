@@ -1,6 +1,5 @@
+use super::epi_params::{daily_probability, EpiParamsT};
 use crate::prelude::Real;
-
-use super::{daily_probability, SEIRParams};
 
 macro_rules! method {
     ($name:ident) => {
@@ -8,27 +7,27 @@ macro_rules! method {
     };
 
     ($name:ident => $expr:expr) => {
-        fn $name(&self) -> Real {
+        default fn $name(&self) -> Real {
             $expr
         }
     };
     ($id:ident(())) => {
-        fn $id(&self) -> Real {
-            <Self as SEIRParams<()>>::$id(self, &())
+        default fn $id(&self) -> Real {
+            <Self as EpiParamsT<()>>::$id(self, &())
         }
     };
 }
 
 /// A trait that provide descriptions of epidemiological parameters independently
-/// from any agent state. The API replicates most of SEIRParams methods without
+/// from any agent state. The API replicates most of EpiLocalParams methods without
 /// requiring and have the same meaning.
-pub trait UniversalSEIRParams {
+pub trait EpiParamsLocalT {
     method!(incubation_period);
     method!(infectious_period);
     method!(severe_period);
     method!(critical_period);
     method!(asymptomatic_infectiousness);
-    method!(prob_asymptomatic );
+    method!(prob_asymptomatic);
     method!(prob_severe);
     method!(prob_critical);
     method!(case_fatality_ratio);
@@ -70,9 +69,9 @@ pub trait UniversalSEIRParams {
 // Trait implementations
 ////////////////////////////////////////////////////////////////////////////////
 
-impl<T> UniversalSEIRParams for T
+impl<T> EpiParamsLocalT for T
 where
-    T: SEIRParams<()>,
+    T: EpiParamsT<()>,
 {
     method!(incubation_period(()));
     method!(infectious_period(()));

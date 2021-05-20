@@ -46,6 +46,30 @@ where
         }
     }
 
+    /// Merge two epicurve trackers
+    pub fn merge<const M: usize>(
+        &self,
+        other: &EpicurveTracker<T, M>,
+    ) -> Option<EpicurveTracker<T, { N + M }>> {
+        if self.size != other.size {
+            return None;
+        }
+        let mut out = EpicurveTracker::new();
+        out.size = self.size;
+        for j in 0..N {
+            out.data[j] = self.data[j].clone();
+        }
+        for j in 0..M {
+            out.data[j] = other.data[j].clone();
+        }
+        return Some(out);
+    }
+
+    /// Add new column to tracker
+    pub fn with_column(&self, data: &Vec<T>) -> Option<EpicurveTracker<T, { N + 1 }>> {
+        self.merge(&EpicurveTracker::<T, 1>::from(data))
+    }
+
     /// Create a new zeroed-counter adding a new empty cell to each column.
     pub fn step(&mut self) {
         for col in &mut self.data {
@@ -139,3 +163,28 @@ where
         self.update(population, true);
     }
 }
+
+impl<T> From<Vec<T>> for EpicurveTracker<T, 1>
+where
+    T: From<usize>,
+{
+    fn from(data: Vec<T>) -> Self {
+        EpicurveTracker {
+            size: data.len(),
+            data: [data],
+        }
+    }
+}
+
+impl<T> From<&Vec<T>> for EpicurveTracker<T, 1>
+where
+    T: From<usize> + Clone,
+{
+    fn from(data: &Vec<T>) -> Self {
+        EpicurveTracker {
+            size: data.len(),
+            data: [data.clone()],
+        }
+    }
+}
+

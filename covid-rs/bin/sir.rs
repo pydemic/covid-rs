@@ -25,7 +25,7 @@ pub fn main() {
         .contaminate_at_random(10, rng)
         .force_infectious(false);
 
-    let params: VaccineDependentSEIR<AgeParam> = Default::default();
+    let params: EpiParamsBindVaccine<AgeParam> = Default::default();
     // let mut params = AgeDependentSEIR::<AgeParam>::default();
     let mut sim: Simulation<_, _, _, { T::CARDINALITY }> =
         Simulation::new_simple(params.clone(), pop, 4.5, 0.095);

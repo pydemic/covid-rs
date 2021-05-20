@@ -3,7 +3,7 @@ use std::fs;
 use covid::{
     epidemic::*,
     models::*,
-    params::{FullSEIRParams, VaccineDependentSEIR},
+    params::{EpiParamsFull, EpiParamsBindVaccine},
     prelude::*,
     sim::*,
     utils::*,
@@ -11,7 +11,7 @@ use covid::{
 use csv::*;
 use serde::{Deserialize, Serialize};
 
-type Params = FullSEIRParams<AgeParam>;
+type Params = EpiParamsFull<AgeParam>;
 
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
 #[serde(default)]
@@ -128,7 +128,7 @@ pub fn simple_simulation(cfg: Config) {
     }
 
     // Initialize simulation
-    let params: VaccineDependentSEIR<AgeParam> = cfg.params.unwrap_or_default().cached().into();
+    let params: EpiParamsBindVaccine<AgeParam> = cfg.params.unwrap_or_default().cached().into();
     let mut sim: Simulation<_, _, _, { T::CARDINALITY }> =
         Simulation::new(params, population, sampler);
 

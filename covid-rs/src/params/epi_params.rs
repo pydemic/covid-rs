@@ -1,12 +1,29 @@
-use super::{BoundParams, BoundParamsRef, MapComponents};
+use super::{
+    bind::{Bind, BindRef},
+    MapComponents,
+};
 use crate::prelude::Real;
 
-/// on some state value. If no such dependency exists, the trait can be
-/// specialized to SEIRParams<()>.
+/// A set of epidemiological parameters dependent on some value. If no such
+/// dependency exists, the trait can thought as EpiParams<()> and
+/// an automatic derivation of EpiLocalParams<()> is provided.
+///
+/// This is useful in several situations: epidemiological parameters may depend
+/// on age, gender, vaccination status, time from infection, socio-economic
+/// factors etc. Instead of anticipating all possible dependencies, we abstract
+/// Two situations:
+///
+///     1. The global param set: implement this trait
+///     2. The global param set specialized to some set of properties that
+///        usually depend on each agent: implement EpiLocalParams.
+///
+/// We can convert a global param to a local one using the LocalBind trait that
+/// maps a EpiParams instance to an EpiLocalParams via some agent or some
+/// properties of that agent.
 ///
 /// State must be feed as an additional argument to the getter functions of
 /// this trait.
-pub trait SEIRParams<S> {
+pub trait EpiParamsT<S> {
     /// Incubation period is the average duration in the "Exposed" category.
     /// Agents are infected but *CANNOT* infect other agents.
     fn incubation_period(&self, obj: &S) -> Real;
@@ -15,13 +32,13 @@ pub trait SEIRParams<S> {
     /// Agents are infected and *CAN* infect other agents.
     fn infectious_period(&self, obj: &S) -> Real;
 
-    /// Average duration of a "severe" case. 
+    /// Average duration of a "severe" case.
     ///
     /// A value of zero  is equivalent to disabling the clinical evolution in the
     /// CH compartments, effectively transforming SEICHAR to SEIR.
     fn severe_period(&self, _obj: &S) -> Real;
 
-    /// Average duration of a "critical" case. 
+    /// Average duration of a "critical" case.
     ///
     /// Like severe_period() a null value makes it coincide with SEIR;
     fn critical_period(&self, _obj: &S) -> Real;
@@ -106,38 +123,34 @@ pub trait SEIRParams<S> {
     ///
     /// It binds to a reference to self, which is more efficient, but may
     /// create problems with lifetimes.
-    fn bind<'a>(&'a self, bind: S) -> BoundParamsRef<'a, Self, S>
+    fn bind<'a>(&'a self, bind: S) -> BindRef<'a, Self, S>
     where
         Self: Sized,
         S: Clone,
     {
-        BoundParamsRef::new(self, bind)
+        BindRef::new(self, bind)
     }
 
     /// Creates a bound SimpleSEIRParams object bound to the given state.
     ///
-    fn bind_copy(&self, obj: &S) -> BoundParams<Self, S>
+    fn bind_copy(&self, obj: &S) -> Bind<Self, S>
     where
         Self: Clone,
         S: Clone,
     {
-        BoundParams::new(self.clone(), obj.clone())
+        Bind::new(self.clone(), obj.clone())
     }
 
     /// Creates a bound SimpleSEIRParams object bound to the given state.
     ///
     /// It binds to a reference to self, which is more efficient, but may
     /// create problems with lifetimes.
-    fn with_bounded_params<R>(
-        &self,
-        bind: S,
-        f: impl FnOnce(&BoundParamsRef<'_, Self, S>) -> R,
-    ) -> R
+    fn with_bounded_params<R>(&self, bind: S, f: impl FnOnce(&BindRef<'_, Self, S>) -> R) -> R
     where
         Self: Sized,
     {
         // let ptr: *mut S = obj;
-        let params = BoundParamsRef::new(self, bind);
+        let params = BindRef::new(self, bind);
         f(&params)
         // // Safety: object cannot be moved
         // unsafe {
@@ -148,15 +161,18 @@ pub trait SEIRParams<S> {
 }
 
 /// A trait for objects tha expose the internal data representation T of the
-/// SEIR param set.
-pub trait SEIRParamsData<T> {
+/// EpiLocalParams param set.
+///
+/// This is useful in conversions between parameters but is not very useful
+/// to end users.
+pub trait EpiParamsData<T> {
     fn with_incubation_period_data<S>(&self, f: impl FnOnce(&T) -> S) -> S;
     fn with_infectious_period_data<S>(&self, f: impl FnOnce(&T) -> S) -> S;
     fn with_severe_period_data<S>(&self, f: impl FnOnce(&T) -> S) -> S;
     fn with_critical_period_data<S>(&self, f: impl FnOnce(&T) -> S) -> S;
 
     /// Helper method that may make it easier to implement with_*_data() methods
-    /// for missing values.
+    /// for missing values.]
     fn with_scalar_data<R, S>(&self, scalar: R, f: impl FnOnce(&T) -> S) -> S
     where
         T: MapComponents<Elem = R>,

@@ -1,4 +1,11 @@
-#![feature(min_specialization, auto_traits, negative_impls, array_map)]
+#![feature(
+    min_specialization,
+    auto_traits,
+    negative_impls,
+    array_map,
+    const_generics,
+    const_evaluatable_checked
+)]
 pub mod epidemic;
 pub mod models;
 pub mod params;
