@@ -11,33 +11,35 @@ use serde::{Deserialize, Serialize};
 pub trait Sampling {
     /// Add a single observation to sample
     fn add(&mut self, x: Real) {
-        self.add_count(x, 1);
+        self.add_many(x, 1);
     }
 
     /// Add many observations to sample. This can be more efficient than adding
     /// one by one.
-    fn add_many<I>(&mut self, xs: I)
+    fn add_sequence<I>(&mut self, xs: I) -> &mut Self
     where
-        I: IntoIterator<Item = Real>,
+        I: Iterator<Item = Real>,
     {
         for x in xs {
             self.add(x);
         }
+        return self;
     }
 
     /// Add many observations to sample from pairs of (data, number of occurrences).
     /// This can be more efficient than adding a single observation
-    fn add_counts<I>(&mut self, xs: I)
+    fn add_sequence_many<I>(&mut self, xs: I) -> &mut Self
     where
-        I: IntoIterator<Item = (Real, usize)>,
+        I: Iterator<Item = (Real, usize)>,
     {
         for (x, n) in xs {
-            self.add_count(x, n);
+            self.add_many(x, n);
         }
+        return self;
     }
 
     /// Add n observations of x
-    fn add_count(&mut self, x: Real, n: usize);
+    fn add_many(&mut self, x: Real, n: usize);
 
     /// Return the sample size
     fn sample_size(&self) -> usize;
@@ -46,10 +48,14 @@ pub trait Sampling {
     fn total(&self) -> Real;
 
     /// Return the minimum value
-    fn min(&self) -> Real;
+    fn min(&self) -> Real {
+        -INF
+    }
 
     /// Return the maximum value
-    fn max(&self) -> Real;
+    fn max(&self) -> Real {
+        INF
+    }
 
     /// Return the variance
     fn var(&self) -> Real;
@@ -71,7 +77,9 @@ pub trait Sampling {
     }
 
     /// Return the last sample from distribution.
-    fn last_sample(&self) -> Real;
+    fn last_sample(&self) -> Real {
+        NAN
+    }
 
     /// Return a simple stats struct holding all statistics as fields.
     fn stats(&self) -> Stats {
@@ -88,7 +96,7 @@ pub trait Sampling {
 }
 
 impl Sampling for Vec<Real> {
-    fn add_count(&mut self, x: Real, n: usize) {
+    fn add_many(&mut self, x: Real, n: usize) {
         for _ in 0..n {
             self.push(x);
         }
@@ -97,16 +105,13 @@ impl Sampling for Vec<Real> {
         self.iter().sum()
     }
     fn var(&self) -> Real {
-        let (n, m1, m2) = self
-            .iter()
-            .fold((0, 0., 0.), |acc, x| (acc.0 + 1, acc.1 + x, acc.2 + x * x));
-        return (m2 / n as Real) - sqr(m1 / n as Real);
+        StdAcc::from_seq(self.iter().cloned()).var()
     }
     fn skew(&self) -> Real {
-        Accumulator::from_data(self).skew()
+        KurtAcc::from_seq(self.iter().cloned()).skew()
     }
     fn kurt(&self) -> Real {
-        Accumulator::from_data(self).kurt()
+        KurtAcc::from_seq(self.iter().cloned()).kurt()
     }
     fn sample_size(&self) -> usize {
         return self.len();
@@ -118,7 +123,7 @@ impl Sampling for Vec<Real> {
         return self.iter().fold(-INF, |acc, x| acc.max(*x));
     }
     fn stats(&self) -> Stats {
-        Accumulator::from_data(self).stats()
+        MinMaxAcc::<KurtAcc>::from_data(self.iter().cloned()).stats()
     }
     fn last_sample(&self) -> Real {
         match self.last() {
@@ -129,7 +134,7 @@ impl Sampling for Vec<Real> {
 }
 
 impl Sampling for Vec<(Real, usize)> {
-    fn add_count(&mut self, x: Real, n: usize) {
+    fn add_many(&mut self, x: Real, n: usize) {
         if let Some(pair) = self.last_mut() {
             if pair.0 == x {
                 pair.1 += n;
@@ -142,20 +147,13 @@ impl Sampling for Vec<(Real, usize)> {
         self.iter().map(|(x, n)| x * (*n as Real)).sum()
     }
     fn var(&self) -> Real {
-        let (mut m0, mut m1, mut m2) = (0.0, 0.0, 0.0);
-        for (x, n) in self {
-            let n_ = *n as Real;
-            m0 += n_;
-            m1 += n_ * x;
-            m2 += n_ * x * x;
-        }
-        return (m2 / m0) - sqr(m1 / m0);
+        StdAcc::from_counts(self.iter().cloned()).skew()
     }
     fn skew(&self) -> Real {
-        Accumulator::from_counts(self).skew()
+        KurtAcc::from_counts(self.iter().cloned()).skew()
     }
     fn kurt(&self) -> Real {
-        Accumulator::from_counts(self).kurt()
+        KurtAcc::from_counts(self.iter().cloned()).kurt()
     }
     fn sample_size(&self) -> usize {
         self.iter().map(|(_, n)| *n).sum()
@@ -167,7 +165,7 @@ impl Sampling for Vec<(Real, usize)> {
         self.iter().fold(-INF, |acc, (x, _)| acc.max(*x))
     }
     fn stats(&self) -> Stats {
-        Accumulator::from_counts(self).stats()
+        MinMaxAcc::<KurtAcc>::from_counts(self).stats()
     }
     fn last_sample(&self) -> Real {
         match self.last() {
@@ -177,67 +175,143 @@ impl Sampling for Vec<(Real, usize)> {
     }
 }
 
-// impl Sampling for HashMap<Real, usize> {
-//     fn add_count(&mut self, x: Real, n: usize) {
-//         if let Some(m) = self.get_mut(x) {
-//             m += n;
-//         } else {
-//             self.insert(x, n);
-//         }
-//     }
-//     fn sample_size(&self) -> usize {
-//         self.iter().map(|(_, n)| *n).sum()
-//     }
-//     fn total(&self) -> Real {
-//         self.iter().map(|(x, _)| *x).sum()
-//     }
-//     fn min(&self) -> Real {
-//         self.iter().fold(INF, |acc, (x, _)| acc.min(*x))
-//     }
-//     fn max(&self) -> Real {
-//         self.iter().fold(-INF, |acc, (x, _)| acc.max(*x))
-//     }
-//     fn var(&self) -> Real {
-//         Accumulator::from_counts(self).var()
-//     }
-//     fn skew(&self) -> Real {
-//         Accumulator::from_counts(self).skew()
-//     }
-//     fn kurt(&self) -> Real {
-//         Accumulator::from_counts(self).kurt()
-//     }
-//     fn last_sample(&self) -> Real {
-//         NAN
-//     }
-// }
+/// Accumulate totals and mean. Other values are estimated from a normalized
+/// Gaussian distribution
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct MeanAcc {
+    m0: Real,
+    m1: Real,
+}
+
+impl Sampling for MeanAcc {
+    fn add_many(&mut self, x: Real, n: usize) {
+        self.m0 += n as Real;
+        self.m1 += (n as Real) * x;
+    }
+
+    fn sample_size(&self) -> usize {
+        self.m0 as usize
+    }
+
+    fn total(&self) -> Real {
+        self.m1
+    }
+
+    fn var(&self) -> Real {
+        1.0
+    }
+
+    fn skew(&self) -> Real {
+        0.0
+    }
+
+    fn kurt(&self) -> Real {
+        3.0
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct StdAcc {
+    m0: Real,
+    m1: Real,
+    m2: Real,
+}
+
+impl Sampling for StdAcc {
+    fn add_many(&mut self, x: Real, n: usize) {
+        let n = n as Real;
+        self.m0 += n;
+        self.m1 += x * n;
+        self.m2 += x * x * n;
+    }
+
+    fn sample_size(&self) -> usize {
+        self.m0 as usize
+    }
+
+    fn total(&self) -> Real {
+        self.m1
+    }
+
+    fn var(&self) -> Real {
+        let mean = self.m1 / self.m0;
+        self.m2 / self.m0 - mean * mean
+    }
+
+    fn skew(&self) -> Real {
+        0.0
+    }
+
+    fn kurt(&self) -> Real {
+        todo!()
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct KurtAcc {
+    m0: Real,
+    m1: Real,
+    m2: Real,
+    m3: Real,
+    m4: Real,
+}
+
+impl Sampling for KurtAcc {
+    fn add_many(&mut self, x: Real, n: usize) {
+        let n = n as Real;
+        self.m0 += n;
+        self.m1 += x * n;
+        self.m2 += x * x * n;
+        self.m3 += x * x * x * n;
+        self.m4 += x * x * x * x * n;
+    }
+    fn sample_size(&self) -> usize {
+        self.m0 as usize
+    }
+    fn total(&self) -> Real {
+        self.m1
+    }
+    fn var(&self) -> Real {
+        let mean = self.m1 / self.m0;
+        self.m2 / self.m0 - mean * mean
+    }
+    fn skew(&self) -> Real {
+        let mu = self.mean();
+        let std = self.std();
+        return (self.m3 / self.m0 - 3.0 * mu * std * std - mu * mu * mu) / (std * std * std);
+    }
+    fn kurt(&self) -> Real {
+        let n = self.m0;
+        let (m, b, c, d) = (self.m1 / n, self.m2 / n, self.m3 / n, self.m4 / n);
+        let m2 = m * m;
+        let m4 = m2 * m2;
+        return (d - 4. * m * c + 6. * m2 * b - 3. * m4) / ((b - m2) * (b - m2));
+    }
+}
 
 /// A simple accumulator of point statistics.
 ///
 /// It stores the latest value computed from number of samples, moments
 /// minimum and maximum values and use it to compute descriptive statistics such
 /// as the mean, variance, skewness, etc.
-#[derive(Debug, Copy, Clone, PartialEq, CopyGetters, Getters)]
-pub struct Accumulator {
-    n: usize,
-    m1: Real,
-    m2: Real,
-    m3: Real,
-    m4: Real,
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct MinMaxAcc<S> {
+    acc: S,
     min: Real,
     max: Real,
     last: Real,
 }
 
-impl Accumulator {
+impl<S: Sampling + Default> MinMaxAcc<S> {
     /// Create new empty Point Stats accumulator
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Feed iterator into point stats accumulator
-    pub fn from_data<'a>(iter: impl IntoIterator<Item = &'a Real>) -> Self {
-        let mut acc = Accumulator::new();
-        for &x in iter {
+    pub fn from_data<'a>(iter: impl Iterator<Item = Real>) -> Self {
+        let mut acc = Self::new();
+        for x in iter {
             acc.add(x);
         }
         return acc;
@@ -245,66 +319,40 @@ impl Accumulator {
 
     /// Feed iterator of pairs of (x, n_counts) into point stats accumulator
     pub fn from_counts<'a>(iter: impl IntoIterator<Item = &'a (Real, usize)>) -> Self {
-        let mut acc = Accumulator::new();
+        let mut acc = Self::new();
         for (x, n) in iter {
-            acc.add_count(*x, *n);
+            acc.add_many(*x, *n);
         }
         return acc;
     }
 
-    /// Merge two accumulators
-    pub fn merge(&self, other: &Self) -> Self {
-        Accumulator {
-            n: self.n + other.n,
-            m1: self.m1 + other.m1,
-            m2: self.m2 + other.m2,
-            m3: self.m3 + other.m3,
-            m4: self.m4 + other.m4,
-            min: self.min + other.min,
-            max: self.max + other.max,
-            last: self.last + other.last,
-        }
-    }
+    // /// Merge two accumulators
+    // pub fn merge(&self, other: &Self) -> Self {
+    //     Accumulator {
+    //         n: self.n + other.n,
+    //         m1: self.m1 + other.m1,
+    //         m2: self.m2 + other.m2,
+    //         m3: self.m3 + other.m3,
+    //         m4: self.m4 + other.m4,
+    //         min: self.min + other.min,
+    //         max: self.max + other.max,
+    //         last: self.last + other.last,
+    //     }
+    // }
 }
 
-impl Sampling for Accumulator {
-    fn add_count(&mut self, x: Real, n: usize) {
-        let m = n as Real;
-        self.n += n;
-        self.m1 += m * x;
-        self.m2 += m * x * x;
-        self.m3 += m * x * x * x;
-        self.m4 += m * x * x * x * x;
+impl<S: Sampling> Sampling for MinMaxAcc<S> {
+    fn add_many(&mut self, x: Real, n: usize) {
+        self.acc.add_many(x, n);
         self.min = Real::min(x, self.min);
         self.max = Real::max(x, self.max);
         self.last = x;
     }
-
-    fn mean(&self) -> Real {
-        self.m1 / self.n as Real
+    fn sample_size(&self) -> usize {
+        self.acc.sample_size()
     }
-
     fn total(&self) -> Real {
-        return self.m1;
-    }
-
-    fn var(&self) -> Real {
-        let m = self.mean();
-        return self.m2 / self.n as Real - m * m;
-    }
-
-    fn skew(&self) -> Real {
-        let m = self.mean();
-        let s = self.std();
-        return (self.m3 / self.n as Real - 3.0 * m * s * s - m * m * m) / (s * s * s);
-    }
-
-    fn kurt(&self) -> Real {
-        let n = self.n as Real;
-        let (m, b, c, d) = (self.m1 / n, self.m2 / n, self.m3 / n, self.m4 / n);
-        let m2 = m * m;
-        let m4 = m2 * m2;
-        return (d - 4. * m * c + 6. * m2 * b - 3. * m4) / ((b - m2) * (b - m2));
+        self.acc.total()
     }
     fn min(&self) -> Real {
         self.min
@@ -312,22 +360,27 @@ impl Sampling for Accumulator {
     fn max(&self) -> Real {
         self.max
     }
-    fn sample_size(&self) -> usize {
-        self.n
+    fn var(&self) -> Real {
+        self.acc.var()
+    }
+    fn skew(&self) -> Real {
+        self.acc.skew()
+    }
+    fn kurt(&self) -> Real {
+        self.acc.kurt()
+    }
+    fn mean(&self) -> Real {
+        self.acc.mean()
     }
     fn last_sample(&self) -> Real {
-        return self.last;
+        self.last
     }
 }
 
-impl Default for Accumulator {
+impl<S: Default> Default for MinMaxAcc<S> {
     fn default() -> Self {
-        Accumulator {
-            n: 0,
-            m1: 0.,
-            m2: 0.,
-            m3: 0.,
-            m4: 0.,
+        MinMaxAcc {
+            acc: Default::default(),
             min: INF,
             max: -INF,
             last: NAN,
@@ -353,6 +406,32 @@ pub struct Stats {
     pub size: usize,
 }
 
+macro_rules! AccImpl {
+    ($($ty:ty),*) => {
+        $(
+            impl $ty {
+                pub fn new() -> Self {
+                    Self::default()
+                }
+
+                pub fn from_seq(seq: impl Iterator<Item = Real>) -> Self {
+                    *Self::new().add_sequence(seq)
+                }
+
+                pub fn from_counts(seq: impl Iterator<Item = (Real, usize)>) -> Self {
+                    *Self::new().add_sequence_many(seq)
+                }
+            }
+        )*
+    };
+}
+AccImpl!(MeanAcc, StdAcc, KurtAcc);
+pub type Accumulator = MinMaxAcc<KurtAcc>;
+
+///////////////////////////////////////////////////////////////////////////////
+// Tests
+///////////////////////////////////////////////////////////////////////////////
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -360,9 +439,9 @@ mod tests {
 
     #[test]
     fn simple_stats() {
-        let mut acc = Accumulator::new();
+        let mut acc = MinMaxAcc::<KurtAcc>::new();
         acc.add(0.);
-        acc.add_many(vec![1., 2., 3., 4.]);
+        acc.add_sequence(vec![1., 2., 3., 4.].iter().cloned());
         let st = acc.stats();
         assert_eq!(st.size, 5);
         assert_approx_eq!(st.mean, 2.0, 0.001);

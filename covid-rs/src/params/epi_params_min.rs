@@ -3,7 +3,7 @@ use super::{
     epi_local_params::EpiParamsLocalT,
     epi_params::{EpiParamsData, EpiParamsT},
     epi_params_clinical::EpiParamsClinical,
-    ForBind, FromLocalParams, MapComponents,
+    ForBind, FromLocalParams, MultiComponent,
 };
 use crate::{
     epi_param_method, epi_param_methods,
@@ -66,7 +66,7 @@ impl<T> EpiParamsMin<T> {
     /// Create a new object from default components
     pub fn default_components() -> Self
     where
-        T: MapComponents<Elem = Real>,
+        T: MultiComponent<Elem = Real>,
     {
         EpiParamsMin {
             incubation_period: T::from_component(cte::INCUBATION_PERIOD),
@@ -141,7 +141,7 @@ impl EpiParamsLocalT for EpiParamsMin<Real> {
 
 impl<T> EpiParamsData<T> for EpiParamsMin<T>
 where
-    T: MapComponents<Elem = Real>,
+    T: MultiComponent<Elem = Real>,
 {
     epi_param_method!(data = incubation_period[T]);
     epi_param_method!(data = infectious_period[T]);

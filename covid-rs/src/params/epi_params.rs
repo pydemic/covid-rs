@@ -1,6 +1,6 @@
 use super::{
     bind::{Bind, BindRef},
-    MapComponents,
+    MultiComponent,
 };
 use crate::prelude::Real;
 
@@ -175,7 +175,7 @@ pub trait EpiParamsData<T> {
     /// for missing values.]
     fn with_scalar_data<R, S>(&self, scalar: R, f: impl FnOnce(&T) -> S) -> S
     where
-        T: MapComponents<Elem = R>,
+        T: MultiComponent<Elem = R>,
     {
         let data = T::from_component(scalar);
         f(&data)

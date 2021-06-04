@@ -1,7 +1,7 @@
 use super::{
     epi_local_params::EpiParamsLocalT,
     epi_params::{daily_probability, EpiParamsT, EpiParamsData},
-    EpiParamsFull, ForBind, FromLocalParams, LocalBind, MapComponents,
+    EpiParamsFull, ForBind, FromLocalParams, LocalBind, MultiComponent,
 };
 use crate::{epi_param_method, epi_param_methods, prelude::Real};
 use getset::Getters;
@@ -25,7 +25,7 @@ pub struct EpiParamsCached<P, T> {
 impl<P, T> EpiParamsCached<P, T>
 where
     P: EpiParamsData<T> + Clone,
-    T: MapComponents<Elem = Real>,
+    T: MultiComponent<Elem = Real>,
 {
     pub fn new(params: &P) -> Self {
         EpiParamsCached {
@@ -45,7 +45,7 @@ where
 impl<P, T> Default for EpiParamsCached<P, T>
 where
     P: EpiParamsData<T> + Default + Clone,
-    T: MapComponents<Elem = Real>,
+    T: MultiComponent<Elem = Real>,
 {
     default fn default() -> Self {
         let params = P::default();
@@ -56,7 +56,7 @@ where
 impl<P, T> From<P> for EpiParamsCached<P, T>
 where
     P: EpiParamsData<T> + Clone,
-    T: MapComponents<Elem = Real>,
+    T: MultiComponent<Elem = Real>,
 {
     fn from(params: P) -> Self {
         Self::new(&params)

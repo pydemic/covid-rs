@@ -1,4 +1,4 @@
-use super::{EpiParamsLocalT, EpiParamsT, EpiParamsGlobal, LocalBind, MapComponents};
+use super::{EpiParamsLocalT, EpiParamsT, EpiParamsGlobal, LocalBind, MultiComponent};
 use crate::{
     models::SimpleAgent,
     prelude::{Age, Real},
@@ -19,7 +19,7 @@ pub struct BindVaccine<P> {
 
 impl<M, D> LocalBind<SimpleAgent<M, bool>> for BindVaccine<EpiParamsGlobal<D>>
 where
-    D: MapComponents<Elem = Real> + Default,
+    D: MultiComponent<Elem = Real> + Default,
 {
     type Local = Self;
     type World = EpiParamsGlobal<D>;

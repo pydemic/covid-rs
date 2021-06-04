@@ -1,6 +1,6 @@
 use super::{
     epi_local_params::EpiParamsLocalT, epi_params::EpiParamsT, EpiParamsCached, EpiParamsClinical,
-    EpiParamsData, EpiParamsMin, ForBind, FromLocalParams, MapComponents,
+    EpiParamsData, EpiParamsMin, ForBind, FromLocalParams, MultiComponent,
 };
 use crate::{epi_param_method, epi_param_methods, prelude::Real};
 use paste::paste;
@@ -31,7 +31,7 @@ impl<T: Default> EpiParamsFull<T> {
     pub fn cached(&self) -> EpiParamsCached<Self, T>
     where
         // P: SEIRParamsData<T>,
-        T: MapComponents<Elem = Real> + Clone,
+        T: MultiComponent<Elem = Real> + Clone,
     {
         EpiParamsCached::new(self)
     }
@@ -39,7 +39,7 @@ impl<T: Default> EpiParamsFull<T> {
 
 impl<T, S> EpiParamsT<S> for EpiParamsFull<T>
 where
-    T: MapComponents<Elem = Real> + ForBind<S, Output = Real> + Default,
+    T: MultiComponent<Elem = Real> + ForBind<S, Output = Real> + Default,
 {
     // Epidemic methods
     epi_param_method!(incubation_period[S], delegate = epidemic);
@@ -82,7 +82,7 @@ impl EpiParamsLocalT for EpiParamsFull<Real> {
 
 impl<T: Default> EpiParamsData<T> for EpiParamsFull<T>
 where
-    T: MapComponents<Elem = Real>,
+    T: MultiComponent<Elem = Real>,
 {
     epi_param_method!(data = incubation_period[T], delegate = epidemic);
     epi_param_method!(data = infectious_period[T], delegate = epidemic);

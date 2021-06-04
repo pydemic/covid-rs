@@ -127,7 +127,7 @@ impl<T: ForAge<Output = Real>> ForBind<Age> for T {
 ///
 /// This trait is natural for types that somehow store a collection of elements
 /// that can be retrieved by some key S using the ForState<S, Output=Elem> trait.
-pub trait MapComponents
+pub trait MultiComponent
 where
     Self: Sized,
 {
@@ -140,7 +140,7 @@ where
     fn from_component(x: Self::Elem) -> Self;
 }
 
-impl MapComponents for Real {
+impl MultiComponent for Real {
     type Elem = Real;
 
     fn map_components(&self, f: impl Fn(Self::Elem) -> Self::Elem) -> Self {
@@ -152,7 +152,7 @@ impl MapComponents for Real {
     }
 }
 
-impl<T, const N: usize> MapComponents for [T; N]
+impl<T, const N: usize> MultiComponent for [T; N]
 where
     T: Sized + Copy,
 {
@@ -167,7 +167,7 @@ where
     }
 }
 
-impl MapComponents for AgeParam {
+impl MultiComponent for AgeParam {
     type Elem = Real;
 
     fn map_components(&self, f: impl Fn(Self::Elem) -> Self::Elem) -> Self {

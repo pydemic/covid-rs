@@ -1,6 +1,6 @@
 use super::{
     constants as cte, epi_local_params::EpiParamsLocalT, epi_params::daily_probability, ForBind,
-    FromLocalParams, MapComponents,
+    FromLocalParams, MultiComponent,
 };
 use crate::{
     epi_param_method,
@@ -40,7 +40,7 @@ impl<T> EpiParamsClinical<T> {
 
     pub fn default_components() -> Self
     where
-        T: MapComponents<Elem = Real>,
+        T: MultiComponent<Elem = Real>,
     {
         EpiParamsClinical {
             severe_period: T::from_component(cte::SEVERE_PERIOD),

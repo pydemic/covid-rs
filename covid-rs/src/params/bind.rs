@@ -1,6 +1,6 @@
 use super::{
     epi_local_params::EpiParamsLocalT, epi_params::EpiParamsT, EpiParamsGlobal, LocalBind,
-    MapComponents,
+    MultiComponent,
 };
 use crate::{
     prelude::{Age, Real},
@@ -112,7 +112,7 @@ impl<'a, P: EpiParamsT<S>, S> EpiParamsLocalT for BindRef<'a, P, S> {
 impl<T, D> LocalBind<T> for Bind<EpiParamsGlobal<D>, Age>
 where
     T: HasAge,
-    D: MapComponents<Elem = Real> + Default,
+    D: MultiComponent<Elem = Real> + Default,
 {
     type Local = Self;
     type World = EpiParamsGlobal<D>;

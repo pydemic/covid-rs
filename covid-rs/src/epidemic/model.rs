@@ -175,7 +175,11 @@ macro_rules! compartment_methods {
                 Self::State: $typ,
             {
                 let mut n = 0;
-                self.each_agent(&mut |_, _| n += 1);
+                self.each_agent(&mut |_, st|
+                    if st.[<is_ $id>]() {
+                        n += 1;
+                    }
+                );
                 return n;
             }
         }
@@ -187,10 +191,10 @@ pub trait EpiModelPopulationExt: Population {
     // Methods for SIR-based populations //////////////////////////////////////
     compartment_methods!(susceptible, for=EpiModel);
     compartment_methods!(contaminated, for=EpiModel);
+    compartment_methods!(contagious, for=EpiModel);
+    compartment_methods!(recovered, for=EpiModel);
     compartment_methods!(dead, for=EpiModel);
-    compartment_methods!(contagious, for=SEIRLike);
     compartment_methods!(infectious, for=SEIRLike);
-    compartment_methods!(recovered, for=SEIRLike);
     compartment_methods!(exposed, for=SEIRLike);
     compartment_methods!(asymptomatic, for=SEICHARLike);
     compartment_methods!(severe, for=SEICHARLike);
@@ -317,9 +321,15 @@ pub trait EpiModelPopulationExt: Population {
     where
         Self::State: EpiModel,
     {
-        self.map_randoms_mut(n, rng, |_, ag| {
-            ag.transfer_contamination_from(infectious);
-        });
+        let mut count = n;
+        for _ in 0..5 {
+            if count == 0 {
+                return self;
+            }
+            self.map_randoms_mut(count, rng, |_, ag| {
+                count -= ag.transfer_contamination_from(infectious) as usize;
+            });
+        }
         return self;
     }
 

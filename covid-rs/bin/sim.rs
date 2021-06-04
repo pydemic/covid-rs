@@ -3,7 +3,7 @@ use std::fs;
 use covid::{
     epidemic::*,
     models::*,
-    params::{EpiParamsFull, EpiParamsBindVaccine},
+    params::{EpiParamsBindVaccine, EpiParamsFull},
     prelude::*,
     sim::*,
     utils::*,
@@ -35,7 +35,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn write_data(&self, data: String, name: &str) {
+    pub fn write_data(&self, data: &String, name: &str) {
         fs::write(name, data).unwrap();
     }
 }
@@ -129,13 +129,13 @@ pub fn simple_simulation(cfg: Config) {
 
     // Initialize simulation
     let params: EpiParamsBindVaccine<AgeParam> = cfg.params.unwrap_or_default().cached().into();
-    let mut sim: Simulation<_, _, _, { T::CARDINALITY }> =
-        Simulation::new(params, population, sampler);
+    let mut sim: Simulation<_, _, _> = Simulation::new(params, population, sampler);
 
     // Should we infect from epicurve?
     if let Some(epi) = cfg.epicurve.clone() {
-        sim.contaminate_at_random( epi.data[0].ceil() as usize, &mut rng);
         sim.calibrate_sampler_from_cases(epi.data.as_slice());
+        println!("{:?}", sim.epistate(true));
+        println!("{:?}", sim.epistate(false));
     } else {
         sim.contaminate_at_random(cfg.initial_infections, &mut rng);
     }
@@ -144,5 +144,7 @@ pub fn simple_simulation(cfg: Config) {
     sim.run(cfg.num_iter);
 
     // Write output
-    cfg.write_data(sim.render_epicurve_csv(T::CSV_HEADER), "epicurve.csv");
+    let csv = sim.render_epicurve_csv(T::CSV_HEADER);
+    cfg.write_data(&csv, "epicurve.csv");
+    println!("{}", &csv);
 }

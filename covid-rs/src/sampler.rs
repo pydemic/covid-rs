@@ -198,26 +198,28 @@ where
         return pairs;
     }
 
-    // fn expected_infection_pairs(&self, population: &P) -> Real {
-    //     let mut total = 0;
-    //     let mut rng = default_rng();
-    //     self.each_infection_pair(population, &mut rng, |i, j| total += 1);
-    //     return total as Real;
-    // }
+    fn expected_infection_pairs(&self, population: &P) -> Real {
+        use crate::utils::default_rng;
 
-    fn expected_infection_pairs(&self, pop: &P) -> Real {
-        let mut total = 0.0;
-        let prob = self.prob_infection;
-        let mut s = 0;
-
-        pop.each_agent(&mut |_, st| {
-            let odds = st.contagion_odds();
-            s += st.is_susceptible() as usize;
-            total += (prob * odds).min(1.0);
-        });
-
-        return total * self.contacts * (s as Real / pop.count() as Real);
+        let mut total = 0;
+        let mut rng = default_rng();
+        self.each_infection_pair(population, &mut rng, |_, _| total += 1);
+        return total as Real;
     }
+
+    // fn expected_infection_pairs(&self, pop: &P) -> Real {
+    //     let mut total = 0.0;
+    //     let prob = self.prob_infection;
+    //     let mut s = 0;
+
+    //     pop.each_agent(&mut |_, st| {
+    //         let odds = st.contagion_odds();
+    //         s += st.is_susceptible() as usize;
+    //         total += (prob * odds).min(1.0);
+    //     });
+
+    //     return total * self.contacts * (s as Real / pop.count() as Real);
+    // }
 }
 
 /// A simple sampling strategy that picks up a fixed number of contacts per
