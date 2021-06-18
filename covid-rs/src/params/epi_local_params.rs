@@ -5,7 +5,6 @@ macro_rules! method {
     ($name:ident) => {
         fn $name(&self) -> Real;
     };
-
     ($name:ident => $expr:expr) => {
         default fn $name(&self) -> Real {
             $expr
@@ -19,8 +18,10 @@ macro_rules! method {
 }
 
 /// A trait that provide descriptions of epidemiological parameters independently
-/// from any agent state. The API replicates most of EpiLocalParams methods without
-/// requiring and have the same meaning.
+/// from any agent state. The API replicates most of EpiParams methods without
+/// requiring argument. 
+/// 
+/// The values have the same meaning as their corresponding EpiParams methods.
 pub trait EpiParamsLocalT {
     method!(incubation_period);
     method!(infectious_period);

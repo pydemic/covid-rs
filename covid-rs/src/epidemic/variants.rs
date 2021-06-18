@@ -61,7 +61,7 @@ impl TryFrom<usize> for Variant {
         match n {
             0 => Ok(Self::Baseline),
             1 => Ok(Self::VoC),
-            _ => Err("invalid index for covid variant"),
+            _ => Err("invalid index for variant"),
         }
     }
 }

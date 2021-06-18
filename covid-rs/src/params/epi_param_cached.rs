@@ -10,7 +10,7 @@ use std::fmt::Debug;
 
 /// A cached params take a params impl and caches all transition probability
 /// values. This avoids some potentially expensive computations involving
-/// exponential by paying a fixed cost upfront when writing data for each
+/// exponentials by paying a fixed cost upfront when writing data for each
 /// corresponding transition period.
 #[derive(Copy, Clone, Debug, PartialEq, Getters)]
 pub struct EpiParamsCached<P, T> {
